@@ -1,0 +1,46 @@
+NOTICE — lectura-lexicon (module Lexicon v1) : licences
+=======================================================
+
+Code
+----
+Copyright (C) 2025-2026 Maxime Carrière (Lectura).
+
+Le code de ce paquet est sous GNU Affero General Public License v3.0 ou
+ultérieure (AGPL-3.0-or-later, texte complet dans LICENCE.txt), ou sous
+licence commerciale de Lectura (usage du code hors des obligations de
+l'AGPL ; contact via https://www.lectura.world). Le sous-paquet
+lectura_lexicon.v0 est le module Lexique v0 (lectura-lexique 1.6.1), du même
+auteur et sous la même licence.
+
+Données
+-------
+Ce paquet ne contient aucune base lexicale ni aucun fichier de données.
+
+Les bases Lexicon que lit le module (servies par l'API publique de Lectura,
+remises avec la licence commerciale, ou construites par l'utilisateur avec
+« python -m lectura_lexicon convertir ») ne sont pas couvertes par la licence
+du code :
+
+- la base Lexicon du français dérive de LeXiK et reste sous CC BY-SA 4.0
+  (https://creativecommons.org/licenses/by-sa/4.0/), avec attribution :
+  CARRIERE, Maxime (2026). LeXiK — lexique phonétique et grammatical du
+  français. Lectura. https://lexique.lectura.world (ORTOLANG, 11403/lexik).
+  Quiconque la reçoit peut la redistribuer, y compris à des fins
+  commerciales, sous la même licence ; la licence commerciale du code ne
+  restreint pas ce droit ;
+- la base Lexicon de l'anglais dérive du lexique anglais de Lectura et reste
+  sous CC BY-SA 4.0 ;
+- une base construite par l'utilisateur suit la licence de sa source.
+
+Attributions détaillées des bases : ATTRIBUTION.md.
+
+Fréquences lexicales calculées par Lectura sur des corpus de textes
+publiquement accessibles (encyclopédie, littérature, dialogues) ; seules des
+statistiques agrégées sont fournies, aucun texte de ces corpus.
+
+Données envoyées à l'API
+------------------------
+En mode API (mode par défaut sans base locale), les mots, motifs et
+prononciations passés aux fonctions sont envoyés au serveur de Lectura
+(https://api.lectura.world). Politique de confidentialité :
+https://www.lectura.world/confidentialite/#api

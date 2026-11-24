@@ -1,0 +1,3454 @@
+# Copyright (C) 2025-2026 Maxime Carrière (Lectura)
+# Licence : AGPL-3.0-or-later — voir LICENCE.txt
+# Licence commerciale disponible — contact via https://www.lectura.world
+"""Classe concrete Lexique avec chargement lazy a 4 niveaux.
+
+- **Niveau 1** (init) : ``frozenset`` de toutes les formes -> ``existe()`` O(1)
+- **Niveau 2** (lazy) : index ``phone -> [entrees]`` -> ``homophones()``
+- **Niveau 3** (lazy) : index ``ortho -> [entrees]`` -> ``info()``, ``frequence()``, ``phone_de()``
+- **Niveau 4** (lazy) : index ``lemme -> [entrees]`` -> ``conjuguer()``, ``formes_de()``
+
+Pour SQLite, les niveaux 2-4 utilisent des requetes SQL directes (pas de RAM).
+Pour CSV/TSV, un seul parcours du fichier construit les trois index a la demande.
+"""
+
+from __future__ import annotations
+
+import csv
+import sqlite3
+import threading
+import warnings
+from pathlib import Path
+from typing import Any, Callable
+
+from lectura_lexicon.v0._aliases import resoudre_colonnes
+from lectura_lexicon.v0._loaders import iter_csv, iter_tsv
+from lectura_lexicon.v0._multext import decoder_multext as _decoder_multext
+from lectura_lexicon.v0._multext import filtre_multext as _filtre_multext
+from lectura_lexicon.v0._multext import motifs_multext as _motifs_multext
+from lectura_lexicon.v0._types import Categorie, Concept, EntreeForme, EntreeLemme, EntreeLexicale
+from lectura_lexicon.v0._utils import normaliser_ortho
+
+from lectura_lexicon.v0 import _morphologie
+from lectura_lexicon.v0 import _phonetique
+from lectura_lexicon.v0 import _semantique
+from lectura_lexicon.v0 import _recherche
+
+
+class Lexique:
+    """Interface de requetage du lexique Lectura.
+
+    Supports CSV, TSV et SQLite. Detection automatique par extension.
+    """
+
+    def __init__(
+        self,
+        source: str | Path,
+        *,
+        table: str = "formes",
+        precharger: bool = False,
+    ) -> None:
+        """Initialise le lexique a partir d'un fichier.
+
+        Args:
+            source: Chemin vers un fichier .db/.sqlite, .tsv, ou .csv
+            table: Nom de la table (pour SQLite uniquement)
+            precharger: Si True, charge tous les index immediatement
+        """
+        self._source = Path(source)
+        self._table = table
+        self._backend = self._detecter_backend()
+
+        # Niveau 1 : set de formes (toujours charge)
+        self._formes: frozenset[str] = frozenset()
+
+        # Niveau 2 : index phone -> entrees (lazy)
+        self._index_phone: dict[str, list[dict[str, Any]]] | None = None
+
+        # Niveau 3 : index ortho -> entrees (lazy)
+        self._index_ortho: dict[str, list[dict[str, Any]]] | None = None
+
+        # Niveau 4 : index lemme -> entrees (lazy)
+        self._index_lemme: dict[str, list[dict[str, Any]]] | None = None
+
+        # SQLite : une connexion par thread (thread-local)
+        self._local = threading.local()
+        self._conn: sqlite3.Connection | None = None  # compat (thread principal)
+        self._all_conns: list[sqlite3.Connection] = []
+        self._conn_lock = threading.Lock()
+        self._col_mapping: dict[str, str] | None = None
+
+        # Version du schema (3, 4 ou 5), detectee au premier acces SQLite
+        self._schema_version: int = 3
+        self._table_cache: dict[str, bool] = {}
+        self._has_fts: bool = False
+
+        # Detecter la version du schema AVANT de charger les formes
+        if self._backend == "sqlite":
+            self._detect_schema_version()
+
+        # Charger le niveau 1
+        self._charger_formes()
+
+        if precharger:
+            self._charger_index()
+
+    def _detecter_backend(self) -> str:
+        """Detecte le backend par extension de fichier."""
+        suffix = self._source.suffix.lower()
+        if suffix in (".db", ".sqlite", ".sqlite3"):
+            return "sqlite"
+        if suffix == ".tsv":
+            return "tsv"
+        return "csv"
+
+    def _charger_formes(self) -> None:
+        """Niveau 1 : charge le set de toutes les formes."""
+        if self._backend == "sqlite":
+            conn = self._get_conn()
+            # La base est ouverte en lecture seule : aucun index n'y est cree.
+            # Sans index NOCASE, les requetes restent justes (balayage de table).
+            cur = conn.execute(f"SELECT DISTINCT lower(ortho) FROM {self._table}")  # noqa: S608
+            self._formes = frozenset(row[0] for row in cur)
+        else:
+            formes: set[str] = set()
+            for entree in self._iter_source():
+                ortho = entree.get("ortho", "")
+                if ortho:
+                    formes.add(normaliser_ortho(ortho))
+            self._formes = frozenset(formes)
+
+    def _iter_source(self):
+        """Itere sur la source CSV/TSV."""
+        if self._backend == "tsv":
+            yield from iter_tsv(self._source)
+        else:
+            yield from iter_csv(self._source)
+
+    def _get_conn(self) -> sqlite3.Connection:
+        """Retourne une connexion SQLite pour le thread courant.
+
+        Chaque thread obtient sa propre connexion (thread-local) pour
+        eviter les conflits de curseurs entre threads concurrents
+        (QThread workers dans la GUI).
+        """
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = self._ouvrir_lecture_seule()
+            conn.row_factory = sqlite3.Row
+            self._local.conn = conn
+            with self._conn_lock:
+                self._all_conns.append(conn)
+            # Garder une reference pour le thread principal (compat)
+            if self._conn is None:
+                self._conn = conn
+        return conn
+
+    def _ouvrir_lecture_seule(self) -> sqlite3.Connection:
+        """Ouvre la base SQLite en lecture seule (``mode=ro``) : elle n'est jamais modifiee.
+
+        Si la base est en mode WAL dans un dossier non inscriptible (fichiers
+        ``-wal``/``-shm`` impossibles a creer), on rouvre avec ``immutable=1``.
+        """
+        if not self._source.is_file():
+            raise FileNotFoundError(f"Base lexicale introuvable : {self._source}")
+        uri = self._source.resolve().as_uri() + "?mode=ro"
+        try:
+            conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
+            conn.execute("SELECT 1 FROM sqlite_master LIMIT 1")
+            return conn
+        except sqlite3.OperationalError:
+            conn = sqlite3.connect(uri + "&immutable=1", uri=True, check_same_thread=False)
+            return conn
+
+    def _detect_schema_version(self) -> None:
+        """Detecte la version du schema BDD (3, 4 ou 5)."""
+        conn = self._get_conn()
+        try:
+            conn.execute("SELECT 1 FROM sens LIMIT 1")
+            self._schema_version = 5
+        except sqlite3.OperationalError:
+            try:
+                conn.execute("SELECT 1 FROM lemmes LIMIT 1")
+                self._schema_version = 4
+            except sqlite3.OperationalError:
+                self._schema_version = 3
+        self._has_fts = self._has_table("fts_formes_ortho")
+
+    @property
+    def schema_version(self) -> int:
+        """Version du schema BDD (3, 4 ou 5)."""
+        return self._schema_version
+
+    def _has_table(self, name: str) -> bool:
+        """Verifie l'existence d'une table dans la BDD SQLite (cache)."""
+        if name in self._table_cache:
+            return self._table_cache[name]
+        if self._backend != "sqlite":
+            self._table_cache[name] = False
+            return False
+        conn = self._get_conn()
+        cur = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (name,),
+        )
+        exists = cur.fetchone() is not None
+        self._table_cache[name] = exists
+        return exists
+
+    @staticmethod
+    def _fts5_escape(term: str) -> str:
+        """Echappe un terme pour une requete FTS5 MATCH (phrase entre guillemets)."""
+        return '"' + term.replace('"', '""') + '"'
+
+    def _charger_index(self) -> None:
+        """Niveaux 2-4 : construit les index phone, ortho et lemme (CSV/TSV)."""
+        if self._backend == "sqlite":
+            return  # Les index SQLite sont geres via requetes
+        if self._index_phone is not None:
+            return  # Deja charge
+
+        index_phone: dict[str, list[dict[str, Any]]] = {}
+        index_ortho: dict[str, list[dict[str, Any]]] = {}
+        index_lemme: dict[str, list[dict[str, Any]]] = {}
+
+        for entree in self._iter_source():
+            ortho = entree.get("ortho", "")
+            if not ortho:
+                continue
+            phone = entree.get("phone", "")
+            freq = entree.get("freq", 0.0)
+            try:
+                freq = float(freq)
+            except (ValueError, TypeError):
+                freq = 0.0
+
+            entry_dict: dict[str, Any] = dict(entree)
+            entry_dict["freq"] = freq
+
+            # Index ortho
+            key_ortho = normaliser_ortho(ortho)
+            if key_ortho not in index_ortho:
+                index_ortho[key_ortho] = []
+            index_ortho[key_ortho].append(entry_dict)
+
+            # Index phone
+            if phone:
+                if phone not in index_phone:
+                    index_phone[phone] = []
+                index_phone[phone].append(entry_dict)
+
+            # Index lemme
+            lemme = entree.get("lemme", "")
+            if lemme:
+                key_lemme = normaliser_ortho(lemme)
+                if key_lemme not in index_lemme:
+                    index_lemme[key_lemme] = []
+                index_lemme[key_lemme].append(entry_dict)
+
+        self._index_phone = index_phone
+        self._index_ortho = index_ortho
+        self._index_lemme = index_lemme
+
+    def _get_index_ortho(self) -> dict[str, list[dict[str, Any]]]:
+        """Retourne l'index ortho, le chargeant si necessaire."""
+        if self._index_ortho is None:
+            self._charger_index()
+        assert self._index_ortho is not None
+        return self._index_ortho
+
+    def _get_index_phone(self) -> dict[str, list[dict[str, Any]]]:
+        """Retourne l'index phone, le chargeant si necessaire."""
+        if self._index_phone is None:
+            self._charger_index()
+        assert self._index_phone is not None
+        return self._index_phone
+
+    def _get_index_lemme(self) -> dict[str, list[dict[str, Any]]]:
+        """Retourne l'index lemme, le chargeant si necessaire."""
+        if self._index_lemme is None:
+            self._charger_index()
+        assert self._index_lemme is not None
+        return self._index_lemme
+
+    # --- API publique (LexiqueProtocol) ---
+
+    def existe(self, mot: str) -> bool:
+        """Test d'appartenance O(1) via le set en memoire."""
+        return normaliser_ortho(mot) in self._formes
+
+    def homophones(self, phone: str) -> list[dict[str, Any]]:
+        """Retourne tous les mots ayant cette prononciation.
+
+        Chaque dict contient au minimum : ortho, cgram, freq.
+        """
+        if self._backend == "sqlite":
+            conn = self._get_conn()
+            if self._schema_version >= 4:
+                cur = conn.execute(
+                    "SELECT f.ortho, l.cgram, f.freq_opensubs AS freq, f.phone "
+                    "FROM formes f "
+                    "LEFT JOIN lemmes l ON f.lemme_id = l.id "
+                    "WHERE f.phone = ?",
+                    (phone,),
+                )
+            else:
+                cur = conn.execute(
+                    f"SELECT ortho, cgram, freq_opensubs AS freq, phone "
+                    f"FROM {self._table} WHERE phone = ?",  # noqa: S608
+                    (phone,),
+                )
+            return [dict(row) for row in cur.fetchall()]
+
+        # CSV/TSV : charger les index si necessaire
+        return self._get_index_phone().get(phone, [])
+
+    def info(self, mot: str) -> list[dict[str, Any]]:
+        """Retourne les entrees lexicales completes pour un mot."""
+        if self._backend == "sqlite":
+            conn = self._get_conn()
+            if self._schema_version >= 4:
+                return self._info_v4(conn, mot)
+            cur = conn.execute(
+                f"SELECT * FROM {self._table} WHERE ortho = ? COLLATE NOCASE",  # noqa: S608
+                (normaliser_ortho(mot),),
+            )
+            colonnes = [desc[0] for desc in cur.description]
+            mapping = resoudre_colonnes(colonnes)
+            results = []
+            for row in cur.fetchall():
+                entry: dict[str, Any] = {}
+                for col, val in zip(colonnes, row):
+                    canon = mapping.get(col, col)
+                    entry[canon] = val
+                results.append(entry)
+            return results
+
+        # CSV/TSV
+        return self._get_index_ortho().get(normaliser_ortho(mot), [])
+
+    def _info_v4(self, conn: sqlite3.Connection, mot: str) -> list[dict[str, Any]]:
+        """info() pour schema v4 : JOIN formes + lemmes."""
+        cur = conn.execute(
+            "SELECT f.id, f.ortho, f.multext, f.phone, f.phone_reversed, "
+            "f.nb_syllabes, f.syllabes, f.orthocode, "
+            "f.freq_opensubs AS freq_opensubs, "
+            "f.freq_frantext, f.freq_lm10, f.freq_frwac, f.freq_composite, f.source, "
+            "l.id AS lemme_id, l.lemme, l.cgram, l.genre, "
+            "l.etymologie, l.freq_opensubs AS lemme_freq, l.age "
+            "FROM formes f "
+            "LEFT JOIN lemmes l ON f.lemme_id = l.id "
+            "WHERE f.ortho = ? COLLATE NOCASE",
+            (normaliser_ortho(mot),),
+        )
+        results = []
+        for row in cur.fetchall():
+            entry: dict[str, Any] = dict(row)
+            # Decoder multext en traits lisibles
+            multext = entry.get("multext") or ""
+            if multext:
+                traits = _decoder_multext(multext)
+                entry["genre"] = traits.get("genre", "") or entry.get("genre", "") or ""
+                entry["nombre"] = traits.get("nombre", "")
+                entry["mode"] = traits.get("mode", "")
+                entry["temps"] = traits.get("temps", "")
+                entry["personne"] = traits.get("personne", "")
+            entry["freq"] = entry.get("freq_composite") or entry.get("freq_opensubs", 0.0) or 0.0
+            results.append(entry)
+        return results
+
+    def frequence(self, mot: str) -> float:
+        """Frequence max parmi toutes les entrees de ce mot."""
+        if self._backend == "sqlite":
+            conn = self._get_conn()
+            cur = conn.execute(
+                f"SELECT MAX(freq_opensubs) FROM {self._table} "  # noqa: S608
+                f"WHERE ortho = ? COLLATE NOCASE",
+                (normaliser_ortho(mot),),
+            )
+            row = cur.fetchone()
+            return float(row[0]) if row and row[0] is not None else 0.0
+
+        # CSV/TSV
+        entries = self._get_index_ortho().get(normaliser_ortho(mot), [])
+        if not entries:
+            return 0.0
+        return max(float(e.get("freq", 0.0)) for e in entries)
+
+    def phone_de(self, mot: str) -> str | None:
+        """Retourne la prononciation la plus frequente d'un mot."""
+        if self._backend == "sqlite":
+            conn = self._get_conn()
+            cur = conn.execute(
+                f"SELECT phone FROM {self._table} "  # noqa: S608
+                f"WHERE ortho = ? COLLATE NOCASE AND phone != '' "
+                f"ORDER BY freq_opensubs DESC LIMIT 1",
+                (normaliser_ortho(mot),),
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
+
+        # CSV/TSV
+        entries = self._get_index_ortho().get(normaliser_ortho(mot), [])
+        phones = [
+            (e.get("phone", ""), float(e.get("freq", 0.0)))
+            for e in entries
+            if e.get("phone")
+        ]
+        if not phones:
+            return None
+        phones.sort(key=lambda x: -x[1])
+        return phones[0][0]
+
+    def verbes_par_phone_et_personne(
+        self,
+        phones: list[str],
+        personne: str,
+        nombre: str,
+    ) -> list[dict[str, Any]]:
+        """Trouve les formes verbales correspondant a une liste de phones et personne.
+
+        Args:
+            phones: Liste de transcriptions IPA (original + variantes proches)
+            personne: Personne grammaticale ("1", "2", "3")
+            nombre: Nombre grammatical ("s", "p")
+
+        Returns:
+            Liste de dicts avec cles : ortho, lemme, cgram, personne, nombre, freq
+        """
+        results: list[dict[str, Any]] = []
+        seen: set[str] = set()
+
+        if self._backend == "sqlite":
+            conn = self._get_conn()
+            placeholders = ",".join("?" for _ in phones)
+
+            if self._schema_version >= 4:
+                # v4 : traits dans multext, lemme dans table lemmes
+                multext_pattern = _filtre_multext(
+                    pos="VER", personne=personne,
+                    nombre={"s": "singulier", "p": "pluriel"}.get(nombre, nombre) if nombre else None,
+                )
+                query = (
+                    "SELECT f.ortho, l.lemme, l.cgram, f.multext, "
+                    "f.freq_composite, f.freq_opensubs AS freq, f.phone "
+                    "FROM formes f "
+                    "LEFT JOIN lemmes l ON f.lemme_id = l.id "
+                    f"WHERE f.phone IN ({placeholders}) "
+                    "AND (l.cgram LIKE 'VER%' OR l.cgram LIKE 'AUX%') "
+                )
+                params: list[Any] = list(phones)
+                if multext_pattern and multext_pattern != "%":
+                    query += "AND f.multext LIKE ? "
+                    params.append(multext_pattern)
+                query += "ORDER BY f.freq_composite DESC"
+                cur = conn.execute(query, params)
+                for row in cur.fetchall():
+                    ortho = row["ortho"]
+                    if ortho.lower() not in seen:
+                        seen.add(ortho.lower())
+                        entry = dict(row)
+                        multext = entry.pop("multext", "") or ""
+                        if multext:
+                            traits = _decoder_multext(multext)
+                            entry["personne"] = traits.get("personne", "")
+                            entry["nombre"] = traits.get("nombre", "")
+                            entry["mode"] = traits.get("mode", "")
+                            entry["temps"] = traits.get("temps", "")
+                        results.append(entry)
+            else:
+                query = (
+                    f"SELECT ortho, lemme, cgram, personne, nombre, mode, temps, "
+                    f"freq_opensubs AS freq, phone "
+                    f"FROM {self._table} "
+                    f"WHERE phone IN ({placeholders}) "
+                    f"AND (cgram LIKE 'VER%' OR cgram LIKE 'AUX%') "
+                    f"AND personne = ?"
+                )
+                params = list(phones) + [personne]
+                if nombre:
+                    query += " AND nombre = ?"
+                    params.append(nombre)
+                query += " ORDER BY freq_opensubs DESC"
+
+                cur = conn.execute(query, params)
+                for row in cur.fetchall():
+                    ortho = row["ortho"]
+                    if ortho.lower() not in seen:
+                        seen.add(ortho.lower())
+                        results.append(dict(row))
+        else:
+            # CSV/TSV : chercher dans l'index phone
+            phone_index = self._get_index_phone()
+
+            for phone in phones:
+                entries = phone_index.get(phone, [])
+                for e in entries:
+                    if not (e.get("cgram", "").startswith("VER") or e.get("cgram", "").startswith("AUX")):
+                        continue
+                    if e.get("personne", "") != personne:
+                        continue
+                    if nombre and e.get("nombre", "") != nombre:
+                        continue
+                    ortho = e.get("ortho", "")
+                    if ortho.lower() not in seen:
+                        seen.add(ortho.lower())
+                        results.append(e)
+
+            results.sort(key=lambda x: -float(x.get("freq", 0)))
+
+        return results
+
+    # --- Methodes facades : Morphologie ---
+
+    def conjuguer(self, verbe: str) -> dict[str, dict[str, dict[str, str]]]:
+        """Table de conjugaison d'un verbe.
+
+        Retour : {mode: {temps: {"1s": forme, "2s": forme, ...}}}
+        """
+        if self._backend == "sqlite":
+            conn = self._get_conn()
+
+            if self._schema_version >= 4:
+                cur = conn.execute(
+                    "SELECT f.ortho, f.multext, f.phone, f.freq_opensubs, "
+                    "l.lemme, l.cgram "
+                    "FROM formes f "
+                    "JOIN lemmes l ON f.lemme_id = l.id "
+                    "WHERE l.lemme = ? COLLATE NOCASE "
+                    "AND (l.cgram LIKE 'VER%' OR l.cgram LIKE 'AUX%')",
+                    (normaliser_ortho(verbe),),
+                )
+                entries = []
+                for row in cur.fetchall():
+                    entry: dict[str, Any] = dict(row)
+                    multext = entry.get("multext") or ""
+                    if multext:
+                        traits = _decoder_multext(multext)
+                        entry["mode"] = traits.get("mode", "")
+                        entry["temps"] = traits.get("temps", "")
+                        entry["personne"] = traits.get("personne", "")
+                        entry["nombre"] = traits.get("nombre", "")
+                        entry["genre"] = traits.get("genre", "")
+                    entries.append(entry)
+                return _morphologie.conjuguer(entries)
+
+            cur = conn.execute(
+                f"SELECT * FROM {self._table} "  # noqa: S608
+                f"WHERE lemme = ? COLLATE NOCASE "
+                f"AND (cgram LIKE 'VER%' OR cgram LIKE 'AUX%')",
+                (normaliser_ortho(verbe),),
+            )
+            colonnes = [desc[0] for desc in cur.description]
+            mapping = resoudre_colonnes(colonnes)
+            entries = []
+            for row in cur.fetchall():
+                entry: dict[str, Any] = {}
+                for col, val in zip(colonnes, row):
+                    canon = mapping.get(col, col)
+                    entry[canon] = val
+                entries.append(entry)
+            return _morphologie.conjuguer(entries)
+
+        entries = self._get_index_lemme().get(normaliser_ortho(verbe), [])
+        return _morphologie.conjuguer(entries)
+
+    def formes_de(self, lemme: str, cgram: str | None = None) -> list[dict[str, Any]]:
+        """Toutes les formes flechies d'un lemme, avec filtre POS optionnel."""
+        if self._backend == "sqlite":
+            conn = self._get_conn()
+
+            if self._schema_version >= 4:
+                return self._formes_de_v4(conn, lemme, cgram)
+
+            query = f"SELECT * FROM {self._table} WHERE lemme = ? COLLATE NOCASE"  # noqa: S608
+            params: list[Any] = [normaliser_ortho(lemme)]
+            if cgram is not None:
+                query += " AND cgram LIKE ?"
+                params.append(f"{cgram}%")
+            cur = conn.execute(query, params)
+            colonnes = [desc[0] for desc in cur.description]
+            mapping = resoudre_colonnes(colonnes)
+            entries = []
+            for row in cur.fetchall():
+                entry: dict[str, Any] = {}
+                for col, val in zip(colonnes, row):
+                    canon = mapping.get(col, col)
+                    entry[canon] = val
+                entries.append(entry)
+            return _morphologie.formes_de(entries, cgram)
+
+        entries = self._get_index_lemme().get(normaliser_ortho(lemme), [])
+        return _morphologie.formes_de(entries, cgram)
+
+    def _formes_de_v4(
+        self, conn: sqlite3.Connection, lemme: str, cgram: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """formes_de() pour schema v4."""
+        query = (
+            "SELECT f.ortho, f.multext, f.phone, f.nb_syllabes, "
+            "f.syllabes, f.orthocode, "
+            "f.freq_opensubs, l.lemme, l.cgram, l.genre "
+            "FROM formes f "
+            "JOIN lemmes l ON f.lemme_id = l.id "
+            "WHERE l.lemme = ? COLLATE NOCASE"
+        )
+        params: list[Any] = [normaliser_ortho(lemme)]
+        if cgram is not None:
+            query += " AND l.cgram LIKE ?"
+            params.append(f"{cgram}%")
+        cur = conn.execute(query, params)
+        results = []
+        seen: set[tuple[str, str]] = set()
+        for row in cur.fetchall():
+            entry: dict[str, Any] = dict(row)
+            multext = entry.get("multext") or ""
+            if multext:
+                traits = _decoder_multext(multext)
+                entry["genre"] = traits.get("genre", "") or entry.get("genre", "") or ""
+                entry["nombre"] = traits.get("nombre", "")
+                entry["mode"] = traits.get("mode", "")
+                entry["temps"] = traits.get("temps", "")
+                entry["personne"] = traits.get("personne", "")
+            ortho = str(entry.get("ortho", "")).lower()
+            dedup_key = (ortho, multext)
+            if dedup_key not in seen:
+                seen.add(dedup_key)
+                results.append(entry)
+        return results
+
+    def lemme_de(self, mot: str) -> str | None:
+        """Lemme le plus frequent parmi les entrees d'un mot."""
+        entries = self.info(mot)
+        return _morphologie.lemme_de(entries)
+
+    # --- Methodes facades : Phonetique ---
+
+    def rimes(self, mot: str, nb_phonemes: int = 2, limite: int = 50) -> list[dict[str, Any]]:
+        """Mots partageant les N derniers phonemes avec le mot donne."""
+        phone = self.phone_de(mot)
+        if not phone:
+            return []
+
+        if self._backend == "sqlite":
+            from lectura_lexicon.v0._utils import _tokenize_ipa
+            segments = _tokenize_ipa(phone)
+            if len(segments) < nb_phonemes:
+                return []
+            # Requete via phone_reversed si colonne existe
+            suffixe = segments[-nb_phonemes:]
+            suffixe_rev = "".join(reversed(suffixe))
+            conn = self._get_conn()
+            try:
+                if self._schema_version >= 4:
+                    cur = conn.execute(
+                        "SELECT f.ortho, f.phone, f.phone_reversed, f.multext, "
+                        "f.nb_syllabes, f.freq_opensubs, f.freq_composite, "
+                        "f.syllabes, f.orthocode, "
+                        "l.lemme, l.cgram, l.genre, l.age "
+                        "FROM formes f "
+                        "LEFT JOIN lemmes l ON f.lemme_id = l.id "
+                        "WHERE f.phone_reversed LIKE ? "
+                        "ORDER BY f.freq_composite DESC",
+                        (f"{suffixe_rev}%",),
+                    )
+                    results = []
+                    seen: set[str] = set()
+                    for row in cur.fetchall():
+                        # Post-filtrage Unicode : LIKE est byte-prefix et confond
+                        # ɔ avec ɔ̃ (le combining tilde suit les mêmes octets).
+                        pr = row["phone_reversed"]
+                        if pr and not pr.startswith(suffixe_rev):
+                            continue
+                        ortho = row["ortho"].lower()
+                        if ortho in seen:
+                            continue
+                        seen.add(ortho)
+                        entry: dict[str, Any] = dict(row)
+                        entry["freq"] = entry.get("freq_composite") or entry.get("freq_opensubs", 0.0) or 0.0
+                        results.append(entry)
+                        if len(results) >= limite:
+                            break
+                    return results
+                else:
+                    cur = conn.execute(
+                        f"SELECT * FROM {self._table} "  # noqa: S608
+                        f"WHERE phone_reversed LIKE ? "
+                        f"ORDER BY freq_opensubs DESC LIMIT ?",
+                        (f"{suffixe_rev}%", limite),
+                    )
+                    colonnes = [desc[0] for desc in cur.description]
+                    mapping = resoudre_colonnes(colonnes)
+                    results = []
+                    for row in cur.fetchall():
+                        entry: dict[str, Any] = {}
+                        for col, val in zip(colonnes, row):
+                            canon = mapping.get(col, col)
+                            entry[canon] = val
+                        results.append(entry)
+                    return results
+            except sqlite3.OperationalError:
+                # phone_reversed n'existe pas, scan complet
+                pass
+
+        phone_index = self._get_index_phone()
+        return _phonetique.rimes(phone_index, phone, nb_phonemes, limite)
+
+    def rimes_par_suffixe(self, suffixe: str, limite: int = 50) -> list[dict[str, Any]]:
+        """Mots dont la phonetique se termine par le suffixe donne.
+
+        Utilise phone_reversed + LIKE avec post-filtrage Unicode.
+        """
+        if not suffixe:
+            return []
+        if self._backend == "sqlite":
+            from lectura_lexicon.v0._utils import _tokenize_ipa
+            segments = _tokenize_ipa(suffixe)
+            suffixe_rev = "".join(reversed(segments))
+            conn = self._get_conn()
+            try:
+                if self._schema_version >= 4:
+                    cur = conn.execute(
+                        "SELECT f.ortho, f.phone, f.phone_reversed, f.multext, "
+                        "f.nb_syllabes, f.freq_opensubs, f.freq_composite, "
+                        "f.syllabes, f.orthocode, "
+                        "l.lemme, l.cgram, l.genre, l.age "
+                        "FROM formes f "
+                        "LEFT JOIN lemmes l ON f.lemme_id = l.id "
+                        "WHERE f.phone_reversed LIKE ? "
+                        "ORDER BY f.freq_composite DESC",
+                        (f"{suffixe_rev}%",),
+                    )
+                    results: list[dict[str, Any]] = []
+                    seen: set[str] = set()
+                    for row in cur.fetchall():
+                        pr = row["phone_reversed"]
+                        if pr and not pr.startswith(suffixe_rev):
+                            continue
+                        ortho = row["ortho"].lower()
+                        if ortho in seen:
+                            continue
+                        seen.add(ortho)
+                        entry: dict[str, Any] = dict(row)
+                        entry["freq"] = entry.get("freq_composite") or entry.get("freq_opensubs", 0.0) or 0.0
+                        results.append(entry)
+                        if len(results) >= limite:
+                            break
+                    return results
+            except Exception:
+                pass
+        return []
+
+    def contient_son(self, son: str, limite: int = 50) -> list[dict[str, Any]]:
+        """Mots contenant une sequence phonetique."""
+        if self._backend == "sqlite":
+            conn = self._get_conn()
+            if self._schema_version >= 4:
+                if self._has_fts:
+                    cur = conn.execute(
+                        "SELECT f.ortho, f.phone, f.multext, f.nb_syllabes, "
+                        "f.freq_opensubs, f.freq_composite, l.lemme, l.cgram "
+                        "FROM formes f "
+                        "LEFT JOIN lemmes l ON f.lemme_id = l.id "
+                        "WHERE f.id IN ("
+                        "  SELECT rowid FROM fts_formes_phone "
+                        "  WHERE fts_formes_phone MATCH ?"
+                        ") "
+                        "ORDER BY f.freq_composite DESC LIMIT ?",
+                        (self._fts5_escape(son), limite),
+                    )
+                else:
+                    cur = conn.execute(
+                        "SELECT f.ortho, f.phone, f.multext, f.nb_syllabes, "
+                        "f.freq_opensubs, f.freq_composite, l.lemme, l.cgram "
+                        "FROM formes f "
+                        "LEFT JOIN lemmes l ON f.lemme_id = l.id "
+                        "WHERE f.phone LIKE ? "
+                        "ORDER BY f.freq_composite DESC LIMIT ?",
+                        (f"%{son}%", limite),
+                    )
+                results = []
+                for row in cur.fetchall():
+                    entry: dict[str, Any] = dict(row)
+                    entry["freq"] = entry.get("freq_composite") or entry.get("freq_opensubs", 0.0) or 0.0
+                    results.append(entry)
+                return results
+            else:
+                cur = conn.execute(
+                    f"SELECT * FROM {self._table} "  # noqa: S608
+                    f"WHERE phone LIKE ? "
+                    f"ORDER BY freq_opensubs DESC LIMIT ?",
+                    (f"%{son}%", limite),
+                )
+                colonnes = [desc[0] for desc in cur.description]
+                mapping = resoudre_colonnes(colonnes)
+                results = []
+                for row in cur.fetchall():
+                    entry: dict[str, Any] = {}
+                    for col, val in zip(colonnes, row):
+                        canon = mapping.get(col, col)
+                        entry[canon] = val
+                    results.append(entry)
+                return results
+
+        phone_index = self._get_index_phone()
+        return _phonetique.contient_son(phone_index, son, limite)
+
+    def mots_par_syllabes(
+        self, n: int, cgram: str | None = None, limite: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Mots avec exactement N syllabes."""
+        if self._backend == "sqlite":
+            conn = self._get_conn()
+
+            if self._schema_version >= 4:
+                query = (
+                    "SELECT f.ortho, f.multext, f.phone, f.nb_syllabes, "
+                    "f.freq_opensubs, f.freq_composite, l.lemme, l.cgram, l.genre "
+                    "FROM formes f "
+                    "LEFT JOIN lemmes l ON f.lemme_id = l.id "
+                    "WHERE f.nb_syllabes = ?"
+                )
+                params: list[Any] = [n]
+                if cgram is not None:
+                    query += " AND l.cgram LIKE ?"
+                    params.append(f"{cgram}%")
+                query += " ORDER BY f.freq_composite DESC LIMIT ?"
+                params.append(limite)
+                try:
+                    cur = conn.execute(query, params)
+                    results = []
+                    for row in cur.fetchall():
+                        entry: dict[str, Any] = dict(row)
+                        multext = entry.get("multext") or ""
+                        if multext:
+                            traits = _decoder_multext(multext)
+                            entry["genre"] = traits.get("genre", "") or entry.get("genre", "") or ""
+                            entry["nombre"] = traits.get("nombre", "")
+                        entry["freq"] = entry.get("freq_composite") or entry.get("freq_opensubs", 0.0) or 0.0
+                        results.append(entry)
+                    return results
+                except sqlite3.OperationalError:
+                    pass
+            else:
+                query = (
+                    f"SELECT * FROM {self._table} "  # noqa: S608
+                    f"WHERE nb_syllabes = ?"
+                )
+                params = [n]
+                if cgram is not None:
+                    query += " AND cgram LIKE ?"
+                    params.append(f"{cgram}%")
+                query += " ORDER BY freq_opensubs DESC LIMIT ?"
+                params.append(limite)
+                try:
+                    cur = conn.execute(query, params)
+                    colonnes = [desc[0] for desc in cur.description]
+                    mapping = resoudre_colonnes(colonnes)
+                    results = []
+                    for row in cur.fetchall():
+                        entry: dict[str, Any] = {}
+                        for col, val in zip(colonnes, row):
+                            canon = mapping.get(col, col)
+                            entry[canon] = val
+                        results.append(entry)
+                    return results
+                except sqlite3.OperationalError:
+                    pass  # colonne absente, fallback
+
+        ortho_index = self._get_index_ortho()
+        return _phonetique.mots_par_syllabes(ortho_index, n, cgram, limite)
+
+    # --- Methodes : Definitions multi-sens ---
+
+    def definitions(self, mot: str, cgram: str | None = None) -> list[dict[str, Any]]:
+        """Definitions multiples depuis la table definitions (v3), concepts (v4) ou sens (v5).
+
+        Retourne [] si la table est absente (compatibilite anciennes BDD).
+        Ordonne par cgram, sens_num.
+        """
+        if self._backend != "sqlite":
+            return []
+
+        if self._schema_version >= 5:
+            return self._definitions_v5(mot, cgram)
+
+        if self._schema_version >= 4:
+            # v4 : deleguer vers concepts_de
+            concepts = self.concepts_de(mot, cgram)
+            results: list[dict[str, Any]] = []
+            for c in concepts:
+                d: dict[str, Any] = dict(c)
+                d["lemme"] = mot
+                d["label"] = c.get("label") or mot
+                d["domaine"] = c.get("theme") or ""
+                # Recuperer exemples, synonymes, antonymes pour compat v3
+                cid = c.get("id")
+                if cid is not None:
+                    d["exemples"] = self.exemples_de(cid)
+                    syn_concepts = self.synonymes_de(cid)
+                    # Retourner les noms de lemmes (dedupliques)
+                    seen_syn: set[str] = set()
+                    syn_words: list[str] = []
+                    for s in syn_concepts:
+                        w = s.get("_lemme") or ""
+                        if w and w.lower() not in seen_syn:
+                            seen_syn.add(w.lower())
+                            syn_words.append(w)
+                    d["synonymes"] = syn_words
+                    ant_concepts = self.antonymes_de(cid)
+                    seen_ant: set[str] = set()
+                    ant_words: list[str] = []
+                    for a in ant_concepts:
+                        w = a.get("_lemme") or ""
+                        if w and w.lower() not in seen_ant:
+                            seen_ant.add(w.lower())
+                            ant_words.append(w)
+                    d["antonymes"] = ant_words
+                    d["categories"] = self.categories_de(cid)
+                else:
+                    d["exemples"] = []
+                    d["synonymes"] = []
+                    d["antonymes"] = []
+                    d["categories"] = []
+                d["tags"] = []
+                results.append(d)
+            return results
+
+        conn = self._get_conn()
+        try:
+            if cgram:
+                cur = conn.execute(
+                    "SELECT * FROM definitions "
+                    "WHERE lemme = ? COLLATE NOCASE AND cgram = ? "
+                    "ORDER BY cgram, sens_num",
+                    (mot, cgram),
+                )
+            else:
+                cur = conn.execute(
+                    "SELECT * FROM definitions "
+                    "WHERE lemme = ? COLLATE NOCASE "
+                    "ORDER BY cgram, sens_num",
+                    (mot,),
+                )
+            rows = cur.fetchall()
+            results = []
+            for row in rows:
+                d = dict(row)
+                # Convertir les champs separes par ; en listes
+                for key in ("exemples", "synonymes", "antonymes", "tags"):
+                    val = d.get(key)
+                    if val:
+                        d[key] = [x.strip() for x in val.split(";") if x.strip()]
+                    else:
+                        d[key] = []
+                results.append(d)
+            return results
+        except sqlite3.OperationalError:
+            # Table definitions absente
+            return []
+
+    # --- Methodes facades : Semantique ---
+
+    def synonymes(self, mot: str) -> list[str]:
+        """Synonymes d'un mot (colonne 'synonymes', separateur ;)."""
+        entries = self.info(mot)
+        return _semantique.synonymes(entries)
+
+    def antonymes(self, mot: str) -> list[str]:
+        """Antonymes d'un mot (colonne 'antonymes', separateur ;)."""
+        entries = self.info(mot)
+        return _semantique.antonymes(entries)
+
+    def definition(self, mot: str) -> list[str]:
+        """Definitions d'un mot."""
+        entries = self.info(mot)
+        return _semantique.definition(entries)
+
+    # --- Methodes facades : Recherche ---
+
+    @staticmethod
+    def _pattern_to_sql(pattern: str) -> tuple[str, str] | None:
+        """Convertit un pattern regex simple en clause SQL native.
+
+        Returns (operator, value) ou None si le pattern est complexe.
+        Ex: ``^chat$`` → ``("=", "chat")``,
+            ``^chat``  → ``("LIKE", "chat%")``.
+        """
+        import re as _re
+        has_start = pattern.startswith("^")
+        has_end = pattern.endswith("$")
+        body = pattern[has_start:len(pattern) - has_end if has_end else len(pattern)]
+        # Verifier que body est un litteral echappe (pas de metacaracteres regex)
+        try:
+            literal = _re.sub(r"\\(.)", r"\1", body)
+            if _re.escape(literal) != body:
+                return None
+        except Exception:
+            return None
+        # Echapper les jokers LIKE
+        literal = literal.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        if has_start and has_end:
+            return ("=", literal)
+        elif has_start:
+            return ("LIKE", literal + "%")
+        elif has_end:
+            return ("LIKE", "%" + literal)
+        else:
+            return ("LIKE", "%" + literal + "%")
+
+    def rechercher(
+        self, pattern: str, champ: str = "ortho", limite: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Recherche par regex sur ortho ou phone."""
+        if self._backend == "sqlite":
+            import re as _re
+            try:
+                regex = _re.compile(pattern, _re.IGNORECASE)
+            except _re.error:
+                return []
+            conn = self._get_conn()
+            col = "phone" if champ == "phone" else "ortho"
+
+            # Optimisation : utiliser = ou LIKE pour les patterns simples
+            # (100-1000x plus rapide que REGEXP sur 1.4M lignes)
+            sql_opt = self._pattern_to_sql(pattern)
+
+            if self._schema_version >= 4:
+                col_qualified = f"f.{col}"
+                # FTS5 : uniquement pour les patterns "contient" (pas d'ancre)
+                fts_table = (
+                    "fts_formes_phone" if col == "phone" else "fts_formes_ortho"
+                )
+                use_fts = (
+                    self._has_fts
+                    and sql_opt is not None
+                    and sql_opt[0] == "LIKE"
+                    and sql_opt[1].startswith("%")
+                    and sql_opt[1].endswith("%")
+                )
+                if use_fts:
+                    _, val = sql_opt  # type: ignore[misc]
+                    # val est "%terme%", extraire le terme brut
+                    fts_term = val[1:-1].replace("\\%", "%").replace("\\_", "_").replace("\\\\", "\\")
+                    where = (
+                        f"f.id IN ("
+                        f"SELECT rowid FROM {fts_table} "
+                        f"WHERE {fts_table} MATCH ?)"
+                    )
+                    params: tuple = (self._fts5_escape(fts_term), limite)
+                elif sql_opt is not None:
+                    op, val = sql_opt
+                    if op == "=":
+                        where = f"{col_qualified} = ? COLLATE NOCASE"
+                    else:
+                        where = f"{col_qualified} LIKE ? COLLATE NOCASE ESCAPE '\\'"
+                    params = (val, limite)
+                else:
+                    conn.create_function(
+                        "REGEXP", 2,
+                        lambda p, s: bool(regex.search(s)) if s else False,
+                    )
+                    where = f"{col_qualified} REGEXP ?"
+                    params = (pattern, limite)
+                # Colonnes facultatives selon la version de la base (v4/v5 n'ont pas toutes celles de v6) : NULL si absente.
+                presentes = {r[1] for r in conn.execute("PRAGMA table_info(formes)")}
+                champs = ", ".join(
+                    f"f.{c}" if c in presentes else f"NULL AS {c}"
+                    for c in ("ortho", "phone", "multext", "nb_syllabes", "freq_opensubs", "freq_composite", "syllabes",
+                              "orthocode", "freq_frantext", "freq_frwac", "freq_lm10", "consonne_latente")
+                )
+                cur = conn.execute(
+                    f"SELECT {champs}, "
+                    "l.lemme, l.cgram, l.age "
+                    "FROM formes f "
+                    "LEFT JOIN lemmes l ON f.lemme_id = l.id "
+                    f"WHERE {where} "
+                    "ORDER BY f.freq_composite DESC LIMIT ?",
+                    params,
+                )
+                results: list[dict[str, Any]] = []
+                seen: set[str] = set()
+                for row in cur.fetchall():
+                    entry: dict[str, Any] = dict(row)
+                    entry["freq"] = entry.get("freq_composite") or entry.get("freq_opensubs", 0.0) or 0.0
+                    ortho = str(entry.get("ortho", "")).lower()
+                    cgram = str(entry.get("cgram", "")).lower()
+                    key = f"{ortho}|{cgram}"
+                    if key not in seen:
+                        seen.add(key)
+                        results.append(entry)
+                return results
+            else:
+                if sql_opt is not None:
+                    op, val = sql_opt
+                    if op == "=":
+                        where = f"{col} = ? COLLATE NOCASE"
+                    else:
+                        where = f"{col} LIKE ? COLLATE NOCASE ESCAPE '\\'"
+                    params = (val, limite)
+                else:
+                    conn.create_function(
+                        "REGEXP", 2,
+                        lambda p, s: bool(regex.search(s)) if s else False,
+                    )
+                    where = f"{col} REGEXP ?"
+                    params = (pattern, limite)
+                cur = conn.execute(
+                    f"SELECT * FROM {self._table} "  # noqa: S608
+                    f"WHERE {where} "
+                    f"ORDER BY freq_opensubs DESC LIMIT ?",
+                    params,
+                )
+                colonnes = [desc[0] for desc in cur.description]
+                mapping = resoudre_colonnes(colonnes)
+                results = []
+                seen = set()
+                for row in cur.fetchall():
+                    entry: dict[str, Any] = {}
+                    for col_name, val in zip(colonnes, row):
+                        canon = mapping.get(col_name, col_name)
+                        entry[canon] = val
+                    ortho = str(entry.get("ortho", "")).lower()
+                    cgram = str(entry.get("cgram", "")).lower()
+                    key = f"{ortho}|{cgram}"
+                    if key not in seen:
+                        seen.add(key)
+                        results.append(entry)
+                return results
+
+        if champ == "phone":
+            index = self._get_index_phone()
+        else:
+            index = self._get_index_ortho()
+        return _recherche.rechercher(index, pattern, champ, limite)
+
+    def _build_filter_clauses(
+        self,
+        *,
+        cgram: str | None = None,
+        genre: str | None = None,
+        nombre: str | None = None,
+        freq_min: float | None = None,
+        freq_max: float | None = None,
+        nb_syllabes: int | None = None,
+        age_min: float | None = None,
+        age_max: float | None = None,
+        illustrable_min: float | None = None,
+        categorie: str | None = None,
+        has_age: bool | None = None,
+        has_phone: bool | None = None,
+    ) -> tuple[list[str], list[Any]]:
+        """Construit les clauses WHERE et parametres pour les filtres."""
+        conditions: list[str] = []
+        params: list[Any] = []
+        if cgram is not None:
+            conditions.append("cgram LIKE ?")
+            params.append(f"{cgram}%")
+        if genre is not None:
+            conditions.append("genre = ?")
+            params.append(genre)
+        if nombre is not None:
+            conditions.append("nombre = ?")
+            params.append(nombre)
+        if freq_min is not None:
+            conditions.append("freq_opensubs >= ?")
+            params.append(freq_min)
+        if freq_max is not None:
+            conditions.append("freq_opensubs <= ?")
+            params.append(freq_max)
+        if nb_syllabes is not None:
+            conditions.append("nb_syllabes = ?")
+            params.append(nb_syllabes)
+        if has_age is True:
+            conditions.append("age IS NOT NULL")
+        elif has_age is False:
+            conditions.append("age IS NULL")
+        if age_min is not None:
+            conditions.append("age >= ?")
+            params.append(age_min)
+        if age_max is not None:
+            conditions.append("age <= ?")
+            params.append(age_max)
+        if illustrable_min is not None:
+            conditions.append("illustrable >= ?")
+            params.append(illustrable_min)
+        if categorie is not None:
+            conditions.append("categorie = ?")
+            params.append(categorie)
+        if has_phone is True:
+            conditions.append("phone IS NOT NULL AND phone != ''")
+        elif has_phone is False:
+            conditions.append("(phone IS NULL OR phone = '')")
+        return conditions, params
+
+    def filtrer(
+        self,
+        *,
+        cgram: str | None = None,
+        genre: str | None = None,
+        nombre: str | None = None,
+        freq_min: float | None = None,
+        freq_max: float | None = None,
+        nb_syllabes: int | None = None,
+        age_min: float | None = None,
+        age_max: float | None = None,
+        illustrable_min: float | None = None,
+        categorie: str | None = None,
+        has_age: bool | None = None,
+        has_phone: bool | None = None,
+        mode: str | None = None,
+        temps: str | None = None,
+        personne: str | None = None,
+        limite: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Filtre multi-critere sur l'ensemble du lexique."""
+        if self._backend == "sqlite":
+            conn = self._get_conn()
+
+            if self._schema_version >= 4:
+                return self._filtrer_v4(
+                    conn, cgram=cgram, genre=genre, nombre=nombre,
+                    freq_min=freq_min, freq_max=freq_max, nb_syllabes=nb_syllabes,
+                    age_min=age_min, age_max=age_max,
+                    has_age=has_age, has_phone=has_phone,
+                    mode=mode, temps=temps, personne=personne,
+                    limite=limite,
+                )
+
+            conditions, params = self._build_filter_clauses(
+                cgram=cgram, genre=genre, nombre=nombre,
+                freq_min=freq_min, freq_max=freq_max, nb_syllabes=nb_syllabes,
+                age_min=age_min, age_max=age_max,
+                illustrable_min=illustrable_min, categorie=categorie,
+                has_age=has_age, has_phone=has_phone,
+            )
+
+            where = " AND ".join(conditions) if conditions else "1=1"
+            query = (
+                f"SELECT * FROM {self._table} "  # noqa: S608
+                f"WHERE {where} LIMIT ?"
+            )
+            params.append(limite if limite else -1)  # limite=0 : sans limite (comme en CSV)
+            cur = conn.execute(query, params)
+            colonnes = [desc[0] for desc in cur.description]
+            mapping = resoudre_colonnes(colonnes)
+            results = []
+            for row in cur.fetchall():
+                entry: dict[str, Any] = {}
+                for col, val in zip(colonnes, row):
+                    canon = mapping.get(col, col)
+                    entry[canon] = val
+                results.append(entry)
+            return results
+
+        # CSV/TSV : iterer sur tout l'index ortho
+        return self._filtrer_csv(
+            limite=limite,
+            cgram=cgram, genre=genre, nombre=nombre,
+            freq_min=freq_min, freq_max=freq_max, nb_syllabes=nb_syllabes,
+            age_min=age_min, age_max=age_max,
+            illustrable_min=illustrable_min, categorie=categorie,
+            has_age=has_age, has_phone=has_phone,
+            mode=mode, temps=temps, personne=personne,
+        )
+
+    # Colonne(s) CSV lues par chaque critere de filtre (une suffit)
+    _COLONNES_CRITERES_CSV: dict[str, tuple[str, ...]] = {
+        "cgram": ("cgram",),
+        "genre": ("genre",),
+        "nombre": ("nombre",),
+        "nb_syllabes": ("nb_syllabes", "nbsyll", "syllabes", "syll"),
+        "age_min": ("age",),
+        "age_max": ("age",),
+        "has_age": ("age",),
+        "illustrable_min": ("illustrable",),
+        "categorie": ("categorie",),
+        "has_phone": ("phone",),
+        "mode": ("mode",),
+        "temps": ("temps",),
+        "personne": ("personne",),
+    }
+
+    def _filtrer_csv(self, *, limite: int = 100, **criteres: Any) -> list[dict[str, Any]]:
+        """Filtre CSV/TSV ; avertit si un critere porte sur une colonne absente du fichier.
+
+        Un tel critere n'est pas ignore : comme en SQL avec une valeur NULL,
+        aucune entree ne le satisfait (sauf ``has_age=False`` / ``has_phone=False``).
+        """
+        ortho_index = self._get_index_ortho()
+        premieres = next(iter(ortho_index.values()), [])
+        colonnes = set(premieres[0].keys()) if premieres else set()
+        absents = [
+            nom for nom, valeur in criteres.items()
+            if valeur is not None
+            and nom in self._COLONNES_CRITERES_CSV
+            and not colonnes.intersection(self._COLONNES_CRITERES_CSV[nom])
+        ]
+        if absents and colonnes:
+            warnings.warn(
+                "Critere(s) sur une colonne absente du fichier "
+                f"{self._source.name} : {', '.join(absents)}. "
+                "Aucune entree n'a de valeur pour ces colonnes.",
+                UserWarning,
+                stacklevel=3,
+            )
+        all_entries = (e for entries in ortho_index.values() for e in entries)
+        return _recherche.filtrer(all_entries, limite=limite, **criteres)
+
+    def _filtrer_v4(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        cgram: str | None = None,
+        genre: str | None = None,
+        nombre: str | None = None,
+        freq_min: float | None = None,
+        freq_max: float | None = None,
+        nb_syllabes: int | None = None,
+        age_min: float | None = None,
+        age_max: float | None = None,
+        has_age: bool | None = None,
+        has_phone: bool | None = None,
+        mode: str | None = None,
+        temps: str | None = None,
+        personne: str | None = None,
+        limite: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Filtre v4 avec multext patterns et JOIN lemmes."""
+        conditions: list[str] = []
+        params: list[Any] = []
+
+        # Multext pattern pour genre/nombre/mode/temps/personne
+        # Sans cgram, genre/nombre/personne restent appliques (un motif par categorie)
+        motifs = _motifs_multext(
+            pos=cgram, mode=mode, temps=temps,
+            personne=personne, nombre=nombre, genre=genre,
+        )
+        if motifs:
+            conditions.append("(" + " OR ".join(["f.multext LIKE ?"] * len(motifs)) + ")")
+            params.extend(motifs)
+        elif cgram:
+            conditions.append("l.cgram LIKE ?")
+            params.append(f"{cgram}%")
+
+        if freq_min is not None:
+            conditions.append("f.freq_opensubs >= ?")
+            params.append(freq_min)
+        if freq_max is not None:
+            conditions.append("f.freq_opensubs <= ?")
+            params.append(freq_max)
+        if nb_syllabes is not None:
+            conditions.append("f.nb_syllabes = ?")
+            params.append(nb_syllabes)
+        if has_age is True:
+            conditions.append("l.age IS NOT NULL")
+        elif has_age is False:
+            conditions.append("l.age IS NULL")
+        if age_min is not None:
+            conditions.append("l.age >= ?")
+            params.append(age_min)
+        if age_max is not None:
+            conditions.append("l.age <= ?")
+            params.append(age_max)
+        if has_phone is True:
+            conditions.append("f.phone IS NOT NULL AND f.phone != ''")
+        elif has_phone is False:
+            conditions.append("(f.phone IS NULL OR f.phone = '')")
+
+        where = " AND ".join(conditions) if conditions else "1=1"
+        query = (
+            "SELECT f.id, f.ortho, f.multext, f.phone, f.nb_syllabes, "
+            "f.freq_opensubs, l.lemme, l.cgram, l.genre, l.age "
+            "FROM formes f "
+            "LEFT JOIN lemmes l ON f.lemme_id = l.id "
+            f"WHERE {where} LIMIT ?"
+        )
+        params.append(limite if limite else -1)  # limite=0 : sans limite (comme en CSV)
+        cur = conn.execute(query, params)
+        results = []
+        for row in cur.fetchall():
+            entry: dict[str, Any] = dict(row)
+            multext = entry.get("multext") or ""
+            if multext:
+                traits = _decoder_multext(multext)
+                entry["genre"] = traits.get("genre", "") or entry.get("genre", "") or ""
+                entry["nombre"] = traits.get("nombre", "")
+                entry["mode"] = traits.get("mode", "")
+                entry["temps"] = traits.get("temps", "")
+                entry["personne"] = traits.get("personne", "")
+            entry["freq"] = entry.get("freq_opensubs", 0.0) or 0.0
+            results.append(entry)
+        return results
+
+    def compter(
+        self,
+        *,
+        cgram: str | None = None,
+        genre: str | None = None,
+        nombre: str | None = None,
+        freq_min: float | None = None,
+        freq_max: float | None = None,
+        nb_syllabes: int | None = None,
+        age_min: float | None = None,
+        age_max: float | None = None,
+        illustrable_min: float | None = None,
+        categorie: str | None = None,
+        has_age: bool | None = None,
+        has_phone: bool | None = None,
+    ) -> int:
+        """Compte les formes matchant les filtres (sans les charger)."""
+        if self._backend == "sqlite":
+            conn = self._get_conn()
+
+            if self._schema_version >= 4:
+                # v4 : utiliser le meme schema que _filtrer_v4
+                conditions: list[str] = []
+                params: list[Any] = []
+                motifs = _motifs_multext(pos=cgram, nombre=nombre, genre=genre)
+                if motifs:
+                    conditions.append(
+                        "(" + " OR ".join(["f.multext LIKE ?"] * len(motifs)) + ")"
+                    )
+                    params.extend(motifs)
+                elif cgram:
+                    conditions.append("l.cgram LIKE ?")
+                    params.append(f"{cgram}%")
+                if freq_min is not None:
+                    conditions.append("f.freq_opensubs >= ?")
+                    params.append(freq_min)
+                if freq_max is not None:
+                    conditions.append("f.freq_opensubs <= ?")
+                    params.append(freq_max)
+                if nb_syllabes is not None:
+                    conditions.append("f.nb_syllabes = ?")
+                    params.append(nb_syllabes)
+                if has_age is True:
+                    conditions.append("l.age IS NOT NULL")
+                elif has_age is False:
+                    conditions.append("l.age IS NULL")
+                if age_min is not None:
+                    conditions.append("l.age >= ?")
+                    params.append(age_min)
+                if age_max is not None:
+                    conditions.append("l.age <= ?")
+                    params.append(age_max)
+                if has_phone is True:
+                    conditions.append("f.phone IS NOT NULL AND f.phone != ''")
+                elif has_phone is False:
+                    conditions.append("(f.phone IS NULL OR f.phone = '')")
+                where = " AND ".join(conditions) if conditions else "1=1"
+                query = (
+                    "SELECT COUNT(*) FROM formes f "
+                    "LEFT JOIN lemmes l ON f.lemme_id = l.id "
+                    f"WHERE {where}"
+                )
+                cur = conn.execute(query, params)
+                row = cur.fetchone()
+                return int(row[0]) if row else 0
+
+            conditions_v3, params_v3 = self._build_filter_clauses(
+                cgram=cgram, genre=genre, nombre=nombre,
+                freq_min=freq_min, freq_max=freq_max, nb_syllabes=nb_syllabes,
+                age_min=age_min, age_max=age_max,
+                illustrable_min=illustrable_min, categorie=categorie,
+                has_age=has_age, has_phone=has_phone,
+            )
+            where = " AND ".join(conditions_v3) if conditions_v3 else "1=1"
+            query = f"SELECT COUNT(*) FROM {self._table} WHERE {where}"  # noqa: S608
+            cur = conn.execute(query, params_v3)
+            row = cur.fetchone()
+            return int(row[0]) if row else 0
+
+        # CSV/TSV : compter via le filtre sans limite (limite=0)
+        return len(self._filtrer_csv(
+            limite=0,
+            cgram=cgram, genre=genre, nombre=nombre,
+            freq_min=freq_min, freq_max=freq_max, nb_syllabes=nb_syllabes,
+            age_min=age_min, age_max=age_max,
+            illustrable_min=illustrable_min, categorie=categorie,
+            has_age=has_age, has_phone=has_phone,
+        ))
+
+    def exporter(
+        self,
+        output_path: str | Path,
+        *,
+        format: str = "csv",
+        colonnes: list[str] | None = None,
+        cgram: str | None = None,
+        genre: str | None = None,
+        nombre: str | None = None,
+        freq_min: float | None = None,
+        freq_max: float | None = None,
+        nb_syllabes: int | None = None,
+        age_min: float | None = None,
+        age_max: float | None = None,
+        illustrable_min: float | None = None,
+        categorie: str | None = None,
+        has_age: bool | None = None,
+        has_phone: bool | None = None,
+        limite: int = 0,
+        callback: Callable[[int], None] | None = None,
+    ) -> int:
+        """Exporte un sous-ensemble filtre du lexique.
+
+        Args:
+            output_path: Chemin du fichier de sortie
+            format: "csv" ou "sqlite"
+            colonnes: Liste des colonnes a inclure (None = toutes)
+            cgram..has_phone: Filtres (memes que filtrer())
+            limite: 0 = pas de limite
+            callback: Appele tous les 5000 lignes avec le nombre courant
+
+        Returns:
+            Nombre de lignes exportees
+        """
+        output_path = Path(output_path)
+        filter_kwargs = dict(
+            cgram=cgram, genre=genre, nombre=nombre,
+            freq_min=freq_min, freq_max=freq_max, nb_syllabes=nb_syllabes,
+            age_min=age_min, age_max=age_max,
+            illustrable_min=illustrable_min, categorie=categorie,
+            has_age=has_age, has_phone=has_phone,
+        )
+
+        if format == "sqlite":
+            return self._exporter_sqlite(
+                output_path, colonnes=colonnes, limite=limite,
+                callback=callback, **filter_kwargs,
+            )
+        return self._exporter_csv(
+            output_path, colonnes=colonnes, limite=limite,
+            callback=callback, **filter_kwargs,
+        )
+
+    def _iter_filtered_rows(
+        self,
+        *,
+        colonnes: list[str] | None = None,
+        limite: int = 0,
+        callback: Callable[[int], None] | None = None,
+        **filter_kwargs: Any,
+    ):
+        """Itere sur les lignes filtrees (generateur)."""
+        count = 0
+        batch_size = 5000
+
+        if self._backend == "sqlite":
+            conn = self._get_conn()
+
+            if self._schema_version >= 4:
+                # v4 : utiliser un JOIN formes+lemmes
+                conditions: list[str] = []
+                params: list[Any] = []
+                cgram = filter_kwargs.get("cgram")
+                if cgram:
+                    conditions.append("l.cgram LIKE ?")
+                    params.append(f"{cgram}%")
+                genre = filter_kwargs.get("genre")
+                if genre:
+                    conditions.append("l.genre = ?")
+                    params.append(genre)
+                freq_min = filter_kwargs.get("freq_min")
+                if freq_min is not None:
+                    conditions.append("f.freq_opensubs >= ?")
+                    params.append(freq_min)
+                freq_max = filter_kwargs.get("freq_max")
+                if freq_max is not None:
+                    conditions.append("f.freq_opensubs <= ?")
+                    params.append(freq_max)
+                nb_syllabes = filter_kwargs.get("nb_syllabes")
+                if nb_syllabes is not None:
+                    conditions.append("f.nb_syllabes = ?")
+                    params.append(nb_syllabes)
+                has_phone = filter_kwargs.get("has_phone")
+                if has_phone is True:
+                    conditions.append("f.phone IS NOT NULL AND f.phone != ''")
+                elif has_phone is False:
+                    conditions.append("(f.phone IS NULL OR f.phone = '')")
+                colonnes_lemmes = {r[1] for r in conn.execute("PRAGMA table_info(lemmes)")}
+                if "age" in colonnes_lemmes:
+                    has_age = filter_kwargs.get("has_age")
+                    if has_age is True:
+                        conditions.append("l.age IS NOT NULL")
+                    elif has_age is False:
+                        conditions.append("l.age IS NULL")
+                    age_min = filter_kwargs.get("age_min")
+                    if age_min is not None:
+                        conditions.append("l.age >= ?")
+                        params.append(age_min)
+                    age_max = filter_kwargs.get("age_max")
+                    if age_max is not None:
+                        conditions.append("l.age <= ?")
+                        params.append(age_max)
+                # Criteres sans colonne correspondante dans une base v4/v5 : on le dit
+                non_geres = [
+                    k for k in ("nombre", "illustrable_min", "categorie")
+                    if filter_kwargs.get(k) is not None
+                ]
+                if "age" not in colonnes_lemmes:
+                    non_geres += [
+                        k for k in ("age_min", "age_max", "has_age")
+                        if filter_kwargs.get(k) is not None
+                    ]
+                if non_geres:
+                    warnings.warn(
+                        "Export d'une base v4/v5 : critere(s) non geres, ignores : "
+                        + ", ".join(non_geres),
+                        UserWarning,
+                        stacklevel=4,
+                    )
+
+                where = " AND ".join(conditions) if conditions else "1=1"
+                select = ", ".join(expr for _nom, expr, _typ in self._colonnes_export_v4(conn))
+                query = (
+                    f"SELECT {select} "
+                    "FROM formes f "
+                    "LEFT JOIN lemmes l ON f.lemme_id = l.id "
+                    f"WHERE {where}"
+                )
+                if limite:
+                    query += " LIMIT ?"
+                    params.append(limite)
+
+                cur = conn.execute(query, params)
+                col_names = [desc[0] for desc in cur.description]
+                for row in cur:
+                    entry = dict(zip(col_names, row))
+                    if colonnes:
+                        entry = {k: v for k, v in entry.items() if k in colonnes}
+                    yield entry
+                    count += 1
+                    if callback and count % batch_size == 0:
+                        callback(count)
+            else:
+                conditions_v3, params_v3 = self._build_filter_clauses(**filter_kwargs)
+                where = " AND ".join(conditions_v3) if conditions_v3 else "1=1"
+
+                # Determiner les colonnes disponibles
+                cur_cols = conn.execute(f"PRAGMA table_info({self._table})")  # noqa: S608
+                all_cols = [row[1] for row in cur_cols.fetchall()]
+
+                if colonnes:
+                    select_cols = [c for c in colonnes if c in all_cols]
+                else:
+                    select_cols = all_cols
+
+                select = ", ".join(select_cols)
+                query = f"SELECT {select} FROM {self._table} WHERE {where}"  # noqa: S608
+                if limite:
+                    query += " LIMIT ?"
+                    params_v3.append(limite)
+
+                cur = conn.execute(query, params_v3)
+                for row in cur:
+                    entry = dict(zip(select_cols, row))
+                    yield entry
+                    count += 1
+                    if callback and count % batch_size == 0:
+                        callback(count)
+        else:
+            for e in self._filtrer_csv(limite=limite, **filter_kwargs):
+                if colonnes:
+                    entry = {k: v for k, v in e.items() if k in colonnes}
+                else:
+                    entry = dict(e)
+                yield entry
+                count += 1
+                if callback and count % batch_size == 0:
+                    callback(count)
+
+    def _colonnes_export_v4(self, conn: sqlite3.Connection) -> list[tuple[str, str, str]]:
+        """Colonnes exportees d'une base v4/v5 : (nom, expression SQL, type).
+
+        Toutes les colonnes de ``formes`` (dont ``lemme_id``), puis ``lemme``,
+        ``cgram``, ``genre`` et ``age`` lus dans ``lemmes`` par jointure.
+        """
+        cols: list[tuple[str, str, str]] = [
+            (r[1], f"f.{r[1]}", r[2] or "TEXT")
+            for r in conn.execute("PRAGMA table_info(formes)")
+        ]
+        noms = {nom for nom, _e, _t in cols}
+        types_lemmes = {r[1]: (r[2] or "TEXT") for r in conn.execute("PRAGMA table_info(lemmes)")}
+        for nom in ("lemme", "cgram", "genre", "age"):
+            if nom in types_lemmes and nom not in noms:
+                cols.append((nom, f"l.{nom} AS {nom}", types_lemmes[nom]))
+        return cols
+
+    def _exporter_csv(
+        self,
+        output_path: Path,
+        *,
+        colonnes: list[str] | None = None,
+        limite: int = 0,
+        callback: Callable[[int], None] | None = None,
+        **filter_kwargs: Any,
+    ) -> int:
+        """Exporte en CSV."""
+        # Determiner les noms de colonnes
+        if colonnes:
+            fieldnames = list(colonnes)
+        elif self._backend == "sqlite" and self._schema_version >= 4:
+            fieldnames = [nom for nom, _e, _t in self._colonnes_export_v4(self._get_conn())]
+        elif self._backend == "sqlite":
+            conn = self._get_conn()
+            cur = conn.execute(f"PRAGMA table_info({self._table})")  # noqa: S608
+            fieldnames = [row[1] for row in cur.fetchall()]
+        else:
+            # Prendre les cles de la premiere entree
+            ortho_index = self._get_index_ortho()
+            first_entries = next(iter(ortho_index.values()), [])
+            fieldnames = list(first_entries[0].keys()) if first_entries else []
+
+        count = 0
+        with open(output_path, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+            writer.writeheader()
+            for entry in self._iter_filtered_rows(
+                colonnes=colonnes, limite=limite,
+                callback=callback, **filter_kwargs,
+            ):
+                writer.writerow(entry)
+                count += 1
+
+        if callback:
+            callback(count)
+        return count
+
+    def _exporter_sqlite(
+        self,
+        output_path: Path,
+        *,
+        colonnes: list[str] | None = None,
+        limite: int = 0,
+        callback: Callable[[int], None] | None = None,
+        **filter_kwargs: Any,
+    ) -> int:
+        """Exporte en SQLite."""
+        if output_path.exists():
+            output_path.unlink()
+
+        # Determiner le schema des colonnes
+        if self._backend == "sqlite" and self._schema_version >= 4:
+            all_col_defs = [
+                (nom, typ) for nom, _e, typ in self._colonnes_export_v4(self._get_conn())
+            ]
+        elif self._backend == "sqlite":
+            conn_src = self._get_conn()
+            cur = conn_src.execute(f"PRAGMA table_info({self._table})")  # noqa: S608
+            col_info = cur.fetchall()
+            # col_info: (cid, name, type, notnull, dflt_value, pk)
+            all_col_defs = [(row[1], row[2]) for row in col_info]
+        else:
+            # Fallback : toutes les colonnes en TEXT
+            ortho_index = self._get_index_ortho()
+            first_entries = next(iter(ortho_index.values()), [])
+            all_col_defs = [(k, "TEXT") for k in first_entries[0].keys()] if first_entries else []
+
+        if colonnes:
+            col_defs = [(name, typ) for name, typ in all_col_defs if name in colonnes]
+        else:
+            col_defs = all_col_defs
+
+        col_names = [name for name, _ in col_defs]
+        col_schema = ", ".join(f"{name} {typ}" for name, typ in col_defs)
+
+        conn_out = sqlite3.connect(str(output_path))
+        conn_out.execute("PRAGMA journal_mode=WAL")
+        conn_out.execute("PRAGMA synchronous=OFF")
+        conn_out.execute(f"CREATE TABLE formes ({col_schema})")
+        conn_out.commit()
+
+        placeholders = ", ".join("?" for _ in col_names)
+        insert_sql = f"INSERT INTO formes ({', '.join(col_names)}) VALUES ({placeholders})"
+
+        count = 0
+        batch: list[tuple] = []
+        batch_size = 10_000
+        for entry in self._iter_filtered_rows(
+            colonnes=colonnes, limite=limite,
+            callback=callback, **filter_kwargs,
+        ):
+            values = tuple(entry.get(c) for c in col_names)
+            batch.append(values)
+            count += 1
+            if len(batch) >= batch_size:
+                conn_out.executemany(insert_sql, batch)
+                conn_out.commit()
+                batch.clear()
+
+        if batch:
+            conn_out.executemany(insert_sql, batch)
+            conn_out.commit()
+
+        # Creer les index utiles
+        for col in ("ortho", "lemme", "phone", "cgram"):
+            if col in col_names:
+                collate = " COLLATE NOCASE" if col in ("ortho", "lemme") else ""
+                conn_out.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{col} ON formes({col}{collate})"
+                )
+        if "illustrable" in col_names:
+            conn_out.execute(
+                "CREATE INDEX IF NOT EXISTS idx_illustrable ON formes(illustrable)"
+            )
+        if "nb_syllabes" in col_names:
+            conn_out.execute(
+                "CREATE INDEX IF NOT EXISTS idx_nb_syllabes ON formes(nb_syllabes)"
+            )
+        conn_out.commit()
+
+        conn_out.execute("VACUUM")
+        conn_out.close()
+
+        if callback:
+            callback(count)
+        return count
+
+    def anagrammes(self, mot: str, limite: int = 50) -> list[dict[str, Any]]:
+        """Mots avec les memes lettres rearrangees."""
+        if self._backend == "sqlite":
+            conn = self._get_conn()
+            mot_lower = mot.strip().lower()
+            mot_sorted = "".join(sorted(mot_lower))
+            # SQLite n'a pas de fonction sort-letters; on scanne les mots
+            # de meme longueur pour limiter le scan
+            cur = conn.execute(
+                f"SELECT DISTINCT ortho FROM {self._table} "  # noqa: S608
+                f"WHERE length(ortho) = ? AND lower(ortho) != ?",
+                (len(mot_lower), mot_lower),
+            )
+            candidats = [row[0] for row in cur.fetchall()
+                         if "".join(sorted(row[0].lower())) == mot_sorted]
+
+            if not candidats:
+                return []
+
+            # Recuperer les entrees completes pour les candidats
+            placeholders = ",".join("?" for _ in candidats)
+
+            if self._schema_version >= 4:
+                cur2 = conn.execute(
+                    "SELECT f.ortho, f.phone, f.multext, f.nb_syllabes, "
+                    "f.freq_opensubs, f.freq_composite, l.lemme, l.cgram "
+                    "FROM formes f "
+                    "LEFT JOIN lemmes l ON f.lemme_id = l.id "
+                    f"WHERE f.ortho IN ({placeholders}) "
+                    "ORDER BY f.freq_composite DESC LIMIT ?",
+                    candidats + [limite],
+                )
+                results: list[dict[str, Any]] = []
+                seen: set[str] = set()
+                for row in cur2.fetchall():
+                    entry: dict[str, Any] = dict(row)
+                    entry["freq"] = entry.get("freq_composite") or entry.get("freq_opensubs", 0.0) or 0.0
+                    ortho = str(entry.get("ortho", "")).lower()
+                    if ortho not in seen:
+                        seen.add(ortho)
+                        results.append(entry)
+                return results
+            else:
+                cur2 = conn.execute(
+                    f"SELECT * FROM {self._table} "  # noqa: S608
+                    f"WHERE ortho IN ({placeholders}) "
+                    f"ORDER BY freq_opensubs DESC LIMIT ?",
+                    candidats + [limite],
+                )
+                colonnes = [desc[0] for desc in cur2.description]
+                mapping = resoudre_colonnes(colonnes)
+                results = []
+                seen = set()
+                for row in cur2.fetchall():
+                    entry: dict[str, Any] = {}
+                    for col, val in zip(colonnes, row):
+                        canon = mapping.get(col, col)
+                        entry[canon] = val
+                    ortho = str(entry.get("ortho", "")).lower()
+                    if ortho not in seen:
+                        seen.add(ortho)
+                        results.append(entry)
+                return results
+
+        ortho_index = self._get_index_ortho()
+        return _recherche.anagrammes(ortho_index, mot, limite)
+
+    # --- Methodes v4 : lemmes, concepts, relations ---
+
+    def info_lemme(self, lemme: str, cgram: str | None = None) -> EntreeLemme | None:
+        """Retourne les infos d'un lemme (v4 uniquement).
+
+        Args:
+            lemme: Le lemme a chercher
+            cgram: Filtre categorie grammaticale optionnel
+
+        Returns:
+            EntreeLemme ou None si introuvable
+        """
+        if self._backend != "sqlite" or self._schema_version < 4:
+            return None
+        conn = self._get_conn()
+        if cgram:
+            cur = conn.execute(
+                "SELECT * FROM lemmes WHERE lemme = ? COLLATE NOCASE AND cgram = ?",
+                (normaliser_ortho(lemme), cgram),
+            )
+        else:
+            cur = conn.execute(
+                "SELECT * FROM lemmes WHERE lemme = ? COLLATE NOCASE",
+                (normaliser_ortho(lemme),),
+            )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return dict(row)  # type: ignore[return-value]
+
+    def infos_lemmes(self, lemme: str) -> list[dict[str, Any]]:
+        """Retourne TOUTES les entrees lemmes pour un mot (homographes).
+
+        Contrairement a ``info_lemme()`` qui retourne le premier resultat,
+        cette methode retourne tous les cgram pour un meme mot
+        (ex: "est" = NOM + ADJ + AUX).
+
+        Args:
+            lemme: Le lemme a chercher
+
+        Returns:
+            Liste de dicts (peut etre vide)
+        """
+        if self._backend != "sqlite" or self._schema_version < 4:
+            return []
+        conn = self._get_conn()
+        cur = conn.execute(
+            "SELECT * FROM lemmes WHERE lemme = ? COLLATE NOCASE",
+            (normaliser_ortho(lemme),),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+    def rechercher_lemmes(
+        self, pattern: str, limite: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Recherche des lemmes par pattern (LIKE %pattern%).
+
+        Necessite v4+. Retourne [] si indisponible.
+
+        Args:
+            pattern: Texte a chercher (LIKE %pattern%)
+            limite: Nombre max de resultats
+
+        Returns:
+            Liste de dicts avec id, lemme, cgram, genre, freq_composite
+        """
+        if self._backend != "sqlite" or self._schema_version < 4:
+            return []
+        conn = self._get_conn()
+        if self._has_fts:
+            cur = conn.execute(
+                "SELECT id, lemme, cgram, genre, freq_composite "
+                "FROM lemmes WHERE id IN ("
+                "  SELECT rowid FROM fts_lemmes WHERE fts_lemmes MATCH ?"
+                ") "
+                "ORDER BY freq_composite DESC LIMIT ?",
+                (self._fts5_escape(pattern), limite),
+            )
+        else:
+            cur = conn.execute(
+                "SELECT id, lemme, cgram, genre, freq_composite "
+                "FROM lemmes WHERE lemme LIKE ? COLLATE NOCASE "
+                "ORDER BY freq_composite DESC LIMIT ?",
+                (f"%{pattern}%", limite),
+            )
+        return [dict(row) for row in cur.fetchall()]
+
+    def sens_de(self, lemme: str, cgram: str | None = None) -> list[dict[str, Any]]:
+        """Retourne les sens (definitions) d'un lemme.
+
+        En v5, lit la table ``sens``. En v4, lit ``concepts`` (wiktionnaire).
+
+        Args:
+            lemme: Le lemme a chercher
+            cgram: Filtre categorie optionnel
+
+        Returns:
+            Liste de dicts ordonnee par sens_num
+        """
+        if self._backend != "sqlite" or self._schema_version < 4:
+            return []
+        conn = self._get_conn()
+        table = "sens" if self._schema_version >= 5 else "concepts"
+        if cgram:
+            cur = conn.execute(
+                f"SELECT c.* FROM {table} c "
+                "JOIN lemmes l ON c.lemme_id = l.id "
+                "WHERE l.lemme = ? COLLATE NOCASE AND l.cgram = ? "
+                "ORDER BY c.sens_num",
+                (normaliser_ortho(lemme), cgram),
+            )
+        else:
+            cur = conn.execute(
+                f"SELECT c.* FROM {table} c "
+                "JOIN lemmes l ON c.lemme_id = l.id "
+                "WHERE l.lemme = ? COLLATE NOCASE "
+                "ORDER BY c.sens_num",
+                (normaliser_ortho(lemme),),
+            )
+        return [dict(row) for row in cur.fetchall()]
+
+    def concepts_de(self, lemme: str, cgram: str | None = None) -> list[Concept]:
+        """Alias de sens_de() pour retrocompatibilite v4."""
+        return self.sens_de(lemme, cgram)  # type: ignore[return-value]
+
+    def entites_associees(
+        self,
+        lemme: str,
+        type_lien: str | None = None,
+        pertinence: int | None = None,
+        cgram: str | None = None,
+        limite: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Retourne les entites liees a un lemme.
+
+        En v5, lit ``entite_lemmes``. En v4, lit ``concept_composants``.
+
+        Args:
+            lemme: Le lemme a chercher
+            type_lien: 'homonyme' ou 'composant' (v5). None = tous.
+            pertinence: Filtrer par pertinence (1 ou 2). None = tous.
+            cgram: Categorie grammaticale pour disambiguer les homonymes.
+            limite: Nombre max de resultats
+
+        Returns:
+            Liste de dicts avec _type, _pertinence
+        """
+        if self._backend != "sqlite" or self._schema_version < 4:
+            return []
+        conn = self._get_conn()
+
+        if self._schema_version >= 5:
+            # Subquery pour resoudre lemme_id d'abord — evite que SQLite
+            # scanne l'index type sur des millions de lignes.
+            lemme_sub = "(SELECT id FROM lemmes WHERE lemme = ? COLLATE NOCASE"
+            params: list[str | int] = [normaliser_ortho(lemme)]
+            if cgram is not None:
+                lemme_sub += " AND cgram = ?"
+                params.append(cgram)
+            lemme_sub += ")"
+            extra = ""
+            if type_lien is not None:
+                extra += "AND el.type = ? "
+                params.append(type_lien)
+            if pertinence is not None:
+                extra += "AND el.pertinence = ? "
+                params.append(pertinence)
+            params.append(limite)
+            cur = conn.execute(
+                "SELECT DISTINCT e.*, el.type AS _type, el.pertinence AS _pertinence "
+                "FROM entites e "
+                "JOIN entite_lemmes el ON el.entite_id = e.id "
+                f"WHERE el.lemme_id IN {lemme_sub} "
+                f"{extra}"
+                "ORDER BY el.type, el.pertinence, e.label "
+                "LIMIT ?",
+                params,
+            )
+            return [dict(row) for row in cur.fetchall()]
+
+        # v4 : ancien schema concept_composants
+        params = [normaliser_ortho(lemme)]
+        prio_clause = ""
+        if pertinence is not None:
+            prio_clause = "AND cc.priorite = ? "
+            params.append(pertinence)
+        params.append(limite)
+        try:
+            cur = conn.execute(
+                "SELECT DISTINCT c.*, l.lemme AS _lemme, l.cgram AS _cgram, "
+                "cc.priorite AS _priorite "
+                "FROM concepts c "
+                "JOIN concept_composants cc ON cc.concept_id = c.id "
+                "JOIN lemmes l_comp ON cc.lemme_id = l_comp.id "
+                "LEFT JOIN lemmes l ON c.lemme_id = l.id "
+                "WHERE l_comp.lemme = ? COLLATE NOCASE "
+                f"{prio_clause}"
+                "ORDER BY cc.priorite, c.sens_num "
+                "LIMIT ?",
+                params,
+            )
+            return [dict(row) for row in cur.fetchall()]
+        except Exception:
+            return []
+
+    def concepts_associes(
+        self,
+        lemme: str,
+        priorite: int | None = None,
+        limite: int = 50,
+    ) -> list[Concept]:
+        """Alias de entites_associees() pour retrocompatibilite v4."""
+        return self.entites_associees(  # type: ignore[return-value]
+            lemme, pertinence=priorite, limite=limite,
+        )
+
+    def detecter_entites_texte(
+        self, lemmes: list[str], limite: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Detecte les entites du lexique presentes dans une liste de lemmes.
+
+        Pour chaque entite trouvee, retourne :
+        - id, label, definition, type_entite
+        - _positions: list[tuple[int, int]] — (debut, fin exclusive) dans la liste de lemmes
+        - _composants: liste des lemmes composants ordonnes
+
+        Seules les entites multi-composants (>= 2) sont detectees.
+        """
+        if self._schema_version < 5 or not lemmes:
+            return []
+
+        conn = self._get_conn()
+
+        # 1. Collecter les lemmes uniques normalises
+        lemmes_lower = [l.lower() for l in lemmes]
+        uniques = list(set(lemmes_lower))
+        if not uniques:
+            return []
+
+        # 2. Resoudre les lemme_ids depuis la table lemmes (rapide via index)
+        placeholders = ",".join("?" * len(uniques))
+        try:
+            cur = conn.execute(
+                "SELECT id, lemme FROM lemmes "
+                f"WHERE lemme COLLATE NOCASE IN ({placeholders})",
+                uniques,
+            )
+            all_lemme_ids: list[int] = []
+            for row in cur.fetchall():
+                all_lemme_ids.append(row[0])
+        except Exception:
+            return []
+
+        if not all_lemme_ids:
+            return []
+
+        # 3. Trouver les entites dont TOUS les composants sont dans le texte
+        #    (et qui ont au moins 2 composants)
+        id_ph = ",".join("?" * len(all_lemme_ids))
+        try:
+            cur = conn.execute(
+                "SELECT el.entite_id, count(*) AS matched, "
+                "(SELECT count(*) FROM entite_lemmes el2 "
+                " WHERE el2.entite_id = el.entite_id "
+                " AND el2.type = 'composant') AS total "
+                "FROM entite_lemmes el "
+                f"WHERE el.type = 'composant' AND el.lemme_id IN ({id_ph}) "
+                "GROUP BY el.entite_id "
+                "HAVING total >= 2 AND matched = total "
+                f"LIMIT {int(limite)}",
+                all_lemme_ids,
+            )
+            candidate_ids = [row[0] for row in cur.fetchall()]
+        except Exception:
+            return []
+
+        if not candidate_ids:
+            return []
+
+        # 4. Recuperer les composants ordonnes de chaque candidate
+        #    (pas de filtre type ici : les candidates sont deja filtrees a l'etape 3,
+        #     et retirer type= permet a SQLite d'utiliser l'index entite_id)
+        cid_ph = ",".join("?" * len(candidate_ids))
+        composants_par_entite: dict[int, list[str]] = {}
+        try:
+            cur = conn.execute(
+                "SELECT el.entite_id, l.lemme "
+                "FROM entite_lemmes el "
+                "JOIN lemmes l ON el.lemme_id = l.id "
+                f"WHERE el.entite_id IN ({cid_ph}) AND +el.type = 'composant' "
+                "ORDER BY el.entite_id, el.position",
+                candidate_ids,
+            )
+            for row in cur.fetchall():
+                eid = row[0]
+                if eid not in composants_par_entite:
+                    composants_par_entite[eid] = []
+                composants_par_entite[eid].append(row[1].lower())
+        except Exception:
+            return []
+
+        # 5. Matching sequentiel dans le texte
+        mots_outils = {
+            "de", "du", "des", "le", "la", "les", "l", "d",
+            "a", "au", "aux", "en", "et",
+        }
+
+        # Index lemme -> positions dans la liste
+        index_positions: dict[str, list[int]] = {}
+        for i, lem in enumerate(lemmes_lower):
+            if lem not in index_positions:
+                index_positions[lem] = []
+            index_positions[lem].append(i)
+
+        entites_matchees: dict[int, list[tuple[int, int]]] = {}
+
+        for eid, composants in composants_par_entite.items():
+            if not composants:
+                continue
+            premier = composants[0]
+            if premier not in index_positions:
+                continue
+
+            for start in index_positions[premier]:
+                pos = start
+                comp_idx = 0
+                matched = True
+
+                while comp_idx < len(composants):
+                    if pos >= len(lemmes_lower):
+                        matched = False
+                        break
+                    if lemmes_lower[pos] == composants[comp_idx]:
+                        comp_idx += 1
+                        pos += 1
+                    elif lemmes_lower[pos] in mots_outils and comp_idx > 0:
+                        pos += 1
+                    else:
+                        matched = False
+                        break
+
+                if matched and comp_idx == len(composants):
+                    if eid not in entites_matchees:
+                        entites_matchees[eid] = []
+                    entites_matchees[eid].append((start, pos))
+
+        if not entites_matchees:
+            return []
+
+        # 6. Recuperer les infos des entites matchees
+        results: list[dict[str, Any]] = []
+        matched_ids = list(entites_matchees.keys())
+        matched_ph = ",".join("?" * len(matched_ids))
+        try:
+            cur = conn.execute(
+                "SELECT id, label, description, type_entite "
+                f"FROM entites WHERE id IN ({matched_ph})",
+                matched_ids,
+            )
+            for row in cur.fetchall():
+                eid = row[0]
+                results.append({
+                    "id": eid,
+                    "label": row[1] or "",
+                    "description": row[2] or "",
+                    "type_entite": row[3] or "",
+                    "_positions": entites_matchees[eid],
+                    "_composants": composants_par_entite.get(eid, []),
+                })
+        except Exception:
+            return []
+
+        return results
+
+    def synonymes_de(self, id_ou_lemme_id: int) -> list[Concept]:
+        """Retourne les synonymes.
+
+        En v5, ``id_ou_lemme_id`` est un lemme_id et lit ``lemme_synonymes``.
+        En v4, c'est un concept_id et lit ``concept_synonymes``.
+
+        Chaque resultat inclut un champ ``_lemme`` avec le nom du lemme.
+        """
+        if self._backend != "sqlite" or self._schema_version < 4:
+            return []
+        conn = self._get_conn()
+        if self._schema_version >= 5:
+            cur = conn.execute(
+                "SELECT l.id, l.lemme AS _lemme, l.cgram AS _cgram "
+                "FROM lemmes l "
+                "JOIN lemme_synonymes ls ON "
+                "  (ls.lemme_b = l.id AND ls.lemme_a = ?) OR "
+                "  (ls.lemme_a = l.id AND ls.lemme_b = ?)",
+                (id_ou_lemme_id, id_ou_lemme_id),
+            )
+            return [dict(row) for row in cur.fetchall()]  # type: ignore[misc]
+        cur = conn.execute(
+            "SELECT c.*, l.lemme AS _lemme FROM concepts c "
+            "LEFT JOIN lemmes l ON c.lemme_id = l.id "
+            "JOIN concept_synonymes cs ON "
+            "  (cs.concept_b = c.id AND cs.concept_a = ?) OR "
+            "  (cs.concept_a = c.id AND cs.concept_b = ?)",
+            (id_ou_lemme_id, id_ou_lemme_id),
+        )
+        return [dict(row) for row in cur.fetchall()]  # type: ignore[misc]
+
+    def antonymes_de(self, id_ou_lemme_id: int) -> list[Concept]:
+        """Retourne les antonymes.
+
+        En v5, ``id_ou_lemme_id`` est un lemme_id et lit ``lemme_antonymes``.
+        En v4, c'est un concept_id et lit ``concept_antonymes``.
+
+        Chaque resultat inclut un champ ``_lemme`` avec le nom du lemme.
+        """
+        if self._backend != "sqlite" or self._schema_version < 4:
+            return []
+        conn = self._get_conn()
+        if self._schema_version >= 5:
+            cur = conn.execute(
+                "SELECT l.id, l.lemme AS _lemme, l.cgram AS _cgram "
+                "FROM lemmes l "
+                "JOIN lemme_antonymes la ON "
+                "  (la.lemme_b = l.id AND la.lemme_a = ?) OR "
+                "  (la.lemme_a = l.id AND la.lemme_b = ?)",
+                (id_ou_lemme_id, id_ou_lemme_id),
+            )
+            return [dict(row) for row in cur.fetchall()]  # type: ignore[misc]
+        cur = conn.execute(
+            "SELECT c.*, l.lemme AS _lemme FROM concepts c "
+            "LEFT JOIN lemmes l ON c.lemme_id = l.id "
+            "JOIN concept_antonymes ca ON "
+            "  (ca.concept_b = c.id AND ca.concept_a = ?) OR "
+            "  (ca.concept_a = c.id AND ca.concept_b = ?)",
+            (id_ou_lemme_id, id_ou_lemme_id),
+        )
+        return [dict(row) for row in cur.fetchall()]  # type: ignore[misc]
+
+    def hyperonymes_de(self, lemme_id: int) -> list[dict[str, Any]]:
+        """Retourne les hyperonymes d'un lemme (IS-A).
+
+        Lit ``lemme_hyperonymes`` en v5. Retourne [] si la table n'existe pas.
+        """
+        if self._backend != "sqlite" or self._schema_version < 5:
+            return []
+        if not self._has_table("lemme_hyperonymes"):
+            return []
+        conn = self._get_conn()
+        cur = conn.execute(
+            "SELECT l.id, l.lemme AS _lemme, l.cgram AS _cgram "
+            "FROM lemmes l "
+            "JOIN lemme_hyperonymes lh ON lh.hyperonyme_id = l.id "
+            "WHERE lh.lemme_id = ?",
+            (lemme_id,),
+        )
+        return [dict(row) for row in cur.fetchall()]  # type: ignore[misc]
+
+    def hyponymes_de(self, lemme_id: int) -> list[dict[str, Any]]:
+        """Retourne les hyponymes d'un lemme (types de...).
+
+        Lookup inverse de ``lemme_hyperonymes`` : WHERE hyperonyme_id = ?.
+        Retourne [] si la table n'existe pas.
+        """
+        if self._backend != "sqlite" or self._schema_version < 5:
+            return []
+        if not self._has_table("lemme_hyperonymes"):
+            return []
+        conn = self._get_conn()
+        cur = conn.execute(
+            "SELECT l.id, l.lemme AS _lemme, l.cgram AS _cgram "
+            "FROM lemmes l "
+            "JOIN lemme_hyperonymes lh ON lh.lemme_id = l.id "
+            "WHERE lh.hyperonyme_id = ?",
+            (lemme_id,),
+        )
+        return [dict(row) for row in cur.fetchall()]  # type: ignore[misc]
+
+    def derives_de(self, lemme_id: int) -> list[dict[str, Any]]:
+        """Retourne les termes derives d'un lemme.
+
+        Lit ``lemme_derives`` (bidirectionnel). Retourne [] si la table n'existe pas.
+        """
+        if self._backend != "sqlite" or self._schema_version < 5:
+            return []
+        if not self._has_table("lemme_derives"):
+            return []
+        conn = self._get_conn()
+        cur = conn.execute(
+            "SELECT l.id, l.lemme AS _lemme, l.cgram AS _cgram "
+            "FROM lemmes l "
+            "JOIN lemme_derives ld ON "
+            "  (ld.lemme_b = l.id AND ld.lemme_a = ?) OR "
+            "  (ld.lemme_a = l.id AND ld.lemme_b = ?)",
+            (lemme_id, lemme_id),
+        )
+        return [dict(row) for row in cur.fetchall()]  # type: ignore[misc]
+
+    def apparentes_sem(self, lemme_id: int) -> list[dict[str, Any]]:
+        """Retourne les termes apparentes semantiquement.
+
+        Lit ``lemme_apparentes_sem`` (bidirectionnel). Retourne [] si la table n'existe pas.
+        """
+        if self._backend != "sqlite" or self._schema_version < 5:
+            return []
+        if not self._has_table("lemme_apparentes_sem"):
+            return []
+        conn = self._get_conn()
+        cur = conn.execute(
+            "SELECT l.id, l.lemme AS _lemme, l.cgram AS _cgram "
+            "FROM lemmes l "
+            "JOIN lemme_apparentes_sem la ON "
+            "  (la.lemme_b = l.id AND la.lemme_a = ?) OR "
+            "  (la.lemme_a = l.id AND la.lemme_b = ?)",
+            (lemme_id, lemme_id),
+        )
+        return [dict(row) for row in cur.fetchall()]  # type: ignore[misc]
+
+    def proverbes_de(self, lemme_id: int) -> list[str]:
+        """Retourne les proverbes et expressions lies a un lemme.
+
+        Lit ``lemme_proverbes``. Retourne [] si la table n'existe pas.
+        """
+        if self._backend != "sqlite" or self._schema_version < 5:
+            return []
+        if not self._has_table("lemme_proverbes"):
+            return []
+        conn = self._get_conn()
+        cur = conn.execute(
+            "SELECT texte FROM lemme_proverbes WHERE lemme_id = ?",
+            (lemme_id,),
+        )
+        return [row[0] for row in cur.fetchall() if row[0]]
+
+    def rechercher_dans_proverbes(
+        self, terme: str, limite: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Recherche les lemmes lies aux proverbes contenant *terme*.
+
+        Lit ``lemme_proverbes``. Retourne [] si la table n'existe pas.
+
+        Args:
+            terme: Texte a chercher dans le proverbe (LIKE %terme%)
+            limite: Nombre max de resultats
+
+        Returns:
+            Liste de dicts avec id, lemme, cgram, genre, freq_composite
+        """
+        if self._backend != "sqlite" or not self._has_table("lemme_proverbes"):
+            return []
+        conn = self._get_conn()
+        cur = conn.execute(
+            "SELECT DISTINCT l.id, l.lemme, l.cgram, l.genre, l.freq_composite "
+            "FROM lemme_proverbes p JOIN lemmes l ON p.lemme_id = l.id "
+            "WHERE p.texte LIKE ? COLLATE NOCASE "
+            "ORDER BY l.freq_composite DESC LIMIT ?",
+            (f"%{terme}%", limite),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+    def rechercher_dans_definitions(
+        self, terme: str, limite: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Recherche les lemmes dont une definition contient le terme.
+
+        Necessite la table ``sens`` (v5). Retourne [] si indisponible.
+
+        Args:
+            terme: Texte a chercher (LIKE %terme%)
+            limite: Nombre max de resultats
+
+        Returns:
+            Liste de dicts avec id, lemme, cgram, genre, freq_composite
+        """
+        if self._backend != "sqlite" or not self._has_table("sens"):
+            return []
+        conn = self._get_conn()
+        if self._has_fts:
+            cur = conn.execute(
+                "SELECT DISTINCT l.id, l.lemme, l.cgram, l.genre, l.freq_composite "
+                "FROM sens s JOIN lemmes l ON s.lemme_id = l.id "
+                "WHERE s.id IN ("
+                "  SELECT rowid FROM fts_sens WHERE fts_sens MATCH ?"
+                ") "
+                "ORDER BY l.freq_composite DESC LIMIT ?",
+                (self._fts5_escape(terme), limite),
+            )
+        else:
+            cur = conn.execute(
+                "SELECT DISTINCT l.id, l.lemme, l.cgram, l.genre, l.freq_composite "
+                "FROM sens s JOIN lemmes l ON s.lemme_id = l.id "
+                "WHERE s.definition LIKE ? "
+                "ORDER BY l.freq_composite DESC LIMIT ?",
+                (f"%{terme}%", limite),
+            )
+        return [dict(row) for row in cur.fetchall()]
+
+    def rechercher_dans_exemples(
+        self, terme: str, limite: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Recherche les lemmes dont un exemple/citation contient le terme.
+
+        Necessite la table ``sens_exemples`` (v5). Retourne [] si indisponible.
+
+        Args:
+            terme: Texte a chercher (LIKE %terme%)
+            limite: Nombre max de resultats
+
+        Returns:
+            Liste de dicts avec id, lemme, cgram, genre, freq_composite
+        """
+        if self._backend != "sqlite" or not self._has_table("sens_exemples"):
+            return []
+        conn = self._get_conn()
+        cur = conn.execute(
+            "SELECT DISTINCT l.id, l.lemme, l.cgram, l.genre, l.freq_composite "
+            "FROM sens_exemples se "
+            "JOIN sens s ON se.sens_id = s.id "
+            "JOIN lemmes l ON s.lemme_id = l.id "
+            "WHERE se.texte LIKE ? "
+            "ORDER BY l.freq_composite DESC LIMIT ?",
+            (f"%{terme}%", limite),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+    def exemples_de(self, sens_id: int) -> list[str]:
+        """Retourne les exemples d'usage d'un sens.
+
+        En v5, lit ``sens_exemples``. En v4, lit ``concept_exemples``.
+        """
+        if self._backend != "sqlite" or self._schema_version < 4:
+            return []
+        conn = self._get_conn()
+        if self._schema_version >= 5:
+            cur = conn.execute(
+                "SELECT texte FROM sens_exemples WHERE sens_id = ?",
+                (sens_id,),
+            )
+            return [row[0] for row in cur.fetchall() if row[0]]
+        cur = conn.execute(
+            "SELECT exemple FROM concept_exemples WHERE concept_id = ?",
+            (sens_id,),
+        )
+        return [row[0] for row in cur.fetchall() if row[0]]
+
+    def categories_de(
+        self, entite_ou_concept_id: int, inclure_ancetres: bool = True,
+    ) -> list[str]:
+        """Retourne les categories d'une entite (v5) ou d'un concept (v4).
+
+        Si *inclure_ancetres* est True, remonte la hierarchie via la
+        closure table pour inclure automatiquement les categories parentes.
+        """
+        if self._backend != "sqlite" or self._schema_version < 4:
+            return []
+        conn = self._get_conn()
+        join_table = "entite_categories" if self._schema_version >= 5 else "concept_categories"
+        id_col = "entite_id" if self._schema_version >= 5 else "concept_id"
+        if inclure_ancetres:
+            cur = conn.execute(
+                "SELECT DISTINCT anc.label FROM categories anc "
+                "JOIN categorie_hierarchie h ON anc.id = h.ancestor_id "
+                f"JOIN {join_table} cc ON cc.categorie_id = h.descendant_id "
+                f"WHERE cc.{id_col} = ? "
+                "ORDER BY h.depth, anc.label",
+                (entite_ou_concept_id,),
+            )
+        else:
+            cur = conn.execute(
+                "SELECT cat.label FROM categories cat "
+                f"JOIN {join_table} cc ON cc.categorie_id = cat.id "
+                f"WHERE cc.{id_col} = ?",
+                (entite_ou_concept_id,),
+            )
+        return [row[0] for row in cur.fetchall() if row[0]]
+
+    def categories_de_batch(
+        self, ids: list[int], inclure_ancetres: bool = False,
+    ) -> dict[int, list[str]]:
+        """Retourne les categories de plusieurs entites en un seul appel.
+
+        Retourne un dict {entite_id: [label, ...]}.
+        """
+        if not ids or self._backend != "sqlite" or self._schema_version < 4:
+            return {}
+        conn = self._get_conn()
+        join_table = "entite_categories" if self._schema_version >= 5 else "concept_categories"
+        id_col = "entite_id" if self._schema_version >= 5 else "concept_id"
+
+        result: dict[int, list[str]] = {}
+        # SQLite limite les parametres a ~999 — traiter par lots
+        batch_size = 900
+        for i in range(0, len(ids), batch_size):
+            batch = ids[i:i + batch_size]
+            placeholders = ",".join("?" * len(batch))
+            if inclure_ancetres:
+                cur = conn.execute(
+                    "SELECT DISTINCT cc.{id_col}, anc.label "
+                    "FROM categories anc "
+                    "JOIN categorie_hierarchie h ON anc.id = h.ancestor_id "
+                    "JOIN {join_table} cc ON cc.categorie_id = h.descendant_id "
+                    "WHERE cc.{id_col} IN ({ph}) "
+                    "ORDER BY h.depth, anc.label".format(
+                        id_col=id_col, join_table=join_table, ph=placeholders,
+                    ),
+                    batch,
+                )
+            else:
+                cur = conn.execute(
+                    "SELECT cc.{id_col}, cat.label "
+                    "FROM categories cat "
+                    "JOIN {join_table} cc ON cc.categorie_id = cat.id "
+                    "WHERE cc.{id_col} IN ({ph})".format(
+                        id_col=id_col, join_table=join_table, ph=placeholders,
+                    ),
+                    batch,
+                )
+            for row in cur.fetchall():
+                eid = int(row[0])
+                lab = row[1]
+                if lab:
+                    result.setdefault(eid, []).append(lab)
+        return result
+
+    def info_categorie(self, label: str) -> Categorie | None:
+        """Retourne une categorie par son label (v4 uniquement)."""
+        if self._backend != "sqlite" or self._schema_version < 4:
+            return None
+        conn = self._get_conn()
+        cur = conn.execute(
+            "SELECT * FROM categories WHERE label = ? COLLATE NOCASE",
+            (label,),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None  # type: ignore[return-value]
+
+    def lister_categories(self, type: str | None = None) -> list[Categorie]:
+        """Liste toutes les categories, optionnellement filtrees par type (v4 uniquement)."""
+        if self._backend != "sqlite" or self._schema_version < 4:
+            return []
+        conn = self._get_conn()
+        if type is not None:
+            cur = conn.execute(
+                "SELECT * FROM categories WHERE type = ? ORDER BY label",
+                (type,),
+            )
+        else:
+            cur = conn.execute("SELECT * FROM categories ORDER BY label")
+        return [dict(row) for row in cur.fetchall()]  # type: ignore[misc]
+
+    def ancetres_categorie(
+        self, label: str, profondeur_max: int | None = None
+    ) -> list[Categorie]:
+        """Remonte la hierarchie depuis une categorie (v4 uniquement)."""
+        if self._backend != "sqlite" or self._schema_version < 4:
+            return []
+        conn = self._get_conn()
+        sql = (
+            "SELECT c.*, h.depth FROM categories c "
+            "JOIN categorie_hierarchie h ON c.id = h.ancestor_id "
+            "JOIN categories d ON d.id = h.descendant_id "
+            "WHERE d.label = ? COLLATE NOCASE AND h.depth > 0"
+        )
+        params: list[str | int] = [label]
+        if profondeur_max is not None:
+            sql += " AND h.depth <= ?"
+            params.append(profondeur_max)
+        sql += " ORDER BY h.depth, c.label"
+        cur = conn.execute(sql, params)
+        return [dict(row) for row in cur.fetchall()]  # type: ignore[misc]
+
+    def descendants_categorie(
+        self, label: str, profondeur_max: int | None = None
+    ) -> list[Categorie]:
+        """Descend la hierarchie depuis une categorie (v4 uniquement)."""
+        if self._backend != "sqlite" or self._schema_version < 4:
+            return []
+        conn = self._get_conn()
+        sql = (
+            "SELECT c.*, h.depth FROM categories c "
+            "JOIN categorie_hierarchie h ON c.id = h.descendant_id "
+            "JOIN categories a ON a.id = h.ancestor_id "
+            "WHERE a.label = ? COLLATE NOCASE AND h.depth > 0"
+        )
+        params: list[str | int] = [label]
+        if profondeur_max is not None:
+            sql += " AND h.depth <= ?"
+            params.append(profondeur_max)
+        sql += " ORDER BY h.depth, c.label"
+        cur = conn.execute(sql, params)
+        return [dict(row) for row in cur.fetchall()]  # type: ignore[misc]
+
+    def _load_dag_parents(self) -> dict[int, list[tuple[int, str]]]:
+        """Charge et met en cache les aretes parent direct du DAG categories."""
+        cache_attr = "_dag_parents_cache"
+        cached = getattr(self, cache_attr, None)
+        if cached is not None:
+            return cached  # type: ignore[return-value]
+        conn = self._get_conn()
+        cur = conn.execute(
+            "SELECT h.descendant_id, h.ancestor_id, c.label "
+            "FROM categorie_hierarchie h "
+            "JOIN categories c ON c.id = h.ancestor_id "
+            "WHERE h.depth = 1"
+        )
+        parents_of: dict[int, list[tuple[int, str]]] = {}
+        for row in cur.fetchall():
+            parents_of.setdefault(row[0], []).append((row[1], row[2]))
+        setattr(self, cache_attr, parents_of)
+        return parents_of
+
+    def hierarchie_categories_entite(
+        self, entite_id: int, max_chemins: int = 10,
+    ) -> list[list[str]]:
+        """Reconstruit les chemins hierarchiques pour une entite.
+
+        Pour chaque categorie directe de l'entite, remonte le DAG via
+        les parents directs (depth=1 dans categorie_hierarchie).
+        Utilise BFS pour trouver les chemins les plus courts vers les
+        racines, un chemin par racine par categorie directe.
+
+        Retourne une liste de chemins tries par longueur, chaque chemin
+        etant une liste de labels [feuille, parent, ..., racine].
+        """
+        if self._backend != "sqlite" or self._schema_version < 4:
+            return []
+        conn = self._get_conn()
+        join_table = "entite_categories" if self._schema_version >= 5 else "concept_categories"
+        id_col = "entite_id" if self._schema_version >= 5 else "concept_id"
+
+        # Recuperer les categories directes de l'entite
+        cur = conn.execute(
+            f"SELECT c.id, c.label FROM categories c "
+            f"JOIN {join_table} ec ON ec.categorie_id = c.id "
+            f"WHERE ec.{id_col} = ?",
+            (entite_id,),
+        )
+        direct_cats = cur.fetchall()
+        if not direct_cats:
+            return []
+
+        parents_of = self._load_dag_parents()
+
+        # BFS par categorie directe : un chemin par racine (le plus court)
+        from collections import deque
+        all_paths: list[list[str]] = []
+        for cat_id, cat_label in direct_cats:
+            seen_roots: set[int] = set()
+            queue: deque[tuple[int, list[str]]] = deque()
+            queue.append((cat_id, [cat_label]))
+            visited: set[int] = {cat_id}
+            while queue:
+                node_id, path = queue.popleft()
+                plist = parents_of.get(node_id, [])
+                if not plist:
+                    # Racine atteinte — garder si pas deja vu cette racine
+                    if node_id not in seen_roots:
+                        seen_roots.add(node_id)
+                        all_paths.append(path)
+                else:
+                    for parent_id, parent_label in plist:
+                        if parent_id not in visited:
+                            visited.add(parent_id)
+                            queue.append((parent_id, path + [parent_label]))
+
+        all_paths.sort(key=len)
+        return all_paths[:max_chemins]
+
+    def entites_par_categorie(
+        self, label: str, inclure_descendants: bool = False,
+        limite: int = 0, offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Retourne les entites liees a une categorie.
+
+        En v5, lit ``entite_categories`` + ``entites``.
+        En v4, lit ``concept_categories`` + ``concepts``.
+
+        Si *inclure_descendants* est True, inclut les sous-categories.
+        Si *limite* > 0, limite le nombre de resultats SQL.
+        Si *offset* > 0, saute les N premiers resultats (pagination).
+        """
+        if self._backend != "sqlite" or self._schema_version < 4:
+            return []
+        conn = self._get_conn()
+
+        limit_clause = ""
+        limit_params: tuple[int, ...] = ()
+        # Quand un LIMIT est applique sans offset, on supprime ORDER BY
+        # cote SQL (le tri se fait cote client dans le QTableWidget) —
+        # sinon SQLite materialise et trie l'integralite du resultset.
+        # Avec offset (pagination web), ORDER BY est requis.
+        order_clause = ""
+        if limite > 0:
+            limit_clause = " LIMIT ?"
+            limit_params = (limite,)
+            if offset > 0:
+                order_clause = " ORDER BY {sort}"
+                limit_clause += " OFFSET ?"
+                limit_params = (limite, offset)
+        else:
+            order_clause = " ORDER BY {sort}"
+
+        if self._schema_version >= 5:
+            sort_col = "e.label"
+            if inclure_descendants:
+                sql = (
+                    "SELECT DISTINCT e.* FROM entites e "
+                    "JOIN entite_categories ec ON e.id = ec.entite_id "
+                    "JOIN categorie_hierarchie h ON ec.categorie_id = h.descendant_id "
+                    "JOIN categories cat ON h.ancestor_id = cat.id "
+                    "WHERE cat.label = ? COLLATE NOCASE"
+                    + order_clause.format(sort=sort_col)
+                    + limit_clause
+                )
+            else:
+                sql = (
+                    "SELECT DISTINCT e.* FROM entites e "
+                    "JOIN entite_categories ec ON e.id = ec.entite_id "
+                    "JOIN categories cat ON ec.categorie_id = cat.id "
+                    "WHERE cat.label = ? COLLATE NOCASE"
+                    + order_clause.format(sort=sort_col)
+                    + limit_clause
+                )
+            cur = conn.execute(sql, (label,) + limit_params)
+            return [dict(row) for row in cur.fetchall()]
+
+        # v4
+        sort_col = "l.lemme, c.sens_num"
+        if inclure_descendants:
+            sql = (
+                "SELECT DISTINCT c.*, l.lemme AS _lemme FROM concepts c "
+                "JOIN concept_categories cc ON c.id = cc.concept_id "
+                "JOIN categorie_hierarchie h ON cc.categorie_id = h.descendant_id "
+                "JOIN categories cat ON h.ancestor_id = cat.id "
+                "LEFT JOIN lemmes l ON c.lemme_id = l.id "
+                "WHERE cat.label = ? COLLATE NOCASE"
+                + order_clause.format(sort=sort_col)
+                + limit_clause
+            )
+        else:
+            sql = (
+                "SELECT DISTINCT c.*, l.lemme AS _lemme FROM concepts c "
+                "JOIN concept_categories cc ON c.id = cc.concept_id "
+                "JOIN categories cat ON cc.categorie_id = cat.id "
+                "LEFT JOIN lemmes l ON c.lemme_id = l.id "
+                "WHERE cat.label = ? COLLATE NOCASE"
+                + order_clause.format(sort=sort_col)
+                + limit_clause
+            )
+        cur = conn.execute(sql, (label,) + limit_params)
+        return [dict(row) for row in cur.fetchall()]
+
+    def concepts_par_categorie(
+        self, label: str, inclure_descendants: bool = False
+    ) -> list[Concept]:
+        """Alias de entites_par_categorie() pour retrocompatibilite v4."""
+        return self.entites_par_categorie(label, inclure_descendants)  # type: ignore[return-value]
+
+    def rechercher_entites(
+        self, pattern: str, limite: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Recherche des entites par mot-cle dans le label ou la description.
+
+        En v5, cherche dans ``entites`` + ``entite_lemmes``.
+        En v4, cherche dans ``concepts`` + ``concept_composants``.
+
+        Args:
+            pattern: Texte a chercher (un ou plusieurs mots)
+            limite: Nombre max de resultats
+
+        Returns:
+            Liste de dicts
+        """
+        if self._backend != "sqlite" or self._schema_version < 4:
+            return []
+        conn = self._get_conn()
+        words = pattern.strip().split()
+        if not words:
+            return []
+
+        if self._schema_version >= 5:
+            return self._rechercher_entites_v5(conn, words, limite)
+
+        # v4 : chercher dans concepts + concept_composants
+        conditions = []
+        params: list[str] = []
+        for word in words:
+            like_pat = f"%{word}%"
+            conditions.append("(c.definition LIKE ? OR l.lemme LIKE ? OR c.label LIKE ?)")
+            params.extend([like_pat, like_pat, like_pat])
+
+        where = " AND ".join(conditions)
+        params.append(str(limite))
+        cur = conn.execute(
+            "SELECT DISTINCT c.*, l.lemme AS _lemme, l.cgram AS _cgram "
+            "FROM concepts c "
+            "LEFT JOIN lemmes l ON c.lemme_id = l.id "
+            f"WHERE {where} "
+            "ORDER BY l.lemme, c.sens_num LIMIT ?",
+            params,
+        )
+        results = [dict(row) for row in cur.fetchall()]
+
+        # Completer via composants NP
+        if len(results) < limite:
+            seen_ids = {r["id"] for r in results}
+            remaining = limite - len(results)
+            having_parts = []
+            comp_params: list[str] = []
+            or_parts = []
+            for word in words:
+                like_pat = f"%{word}%"
+                or_parts.append("cl.lemme LIKE ?")
+                comp_params.append(like_pat)
+                having_parts.append(
+                    f"COUNT(DISTINCT CASE WHEN cl.lemme LIKE ? THEN 1 END) > 0"
+                )
+                comp_params.append(like_pat)
+
+            or_clause = " OR ".join(or_parts)
+            having_clause = " AND ".join(having_parts)
+            comp_params.append(str(remaining))
+
+            try:
+                cur2 = conn.execute(
+                    "SELECT DISTINCT c.*, l.lemme AS _lemme, l.cgram AS _cgram "
+                    "FROM concepts c "
+                    "LEFT JOIN lemmes l ON c.lemme_id = l.id "
+                    "WHERE c.id IN ("
+                    "  SELECT cc.concept_id FROM concept_composants cc "
+                    "  JOIN lemmes cl ON cc.lemme_id = cl.id "
+                    f"  WHERE {or_clause} "
+                    f"  GROUP BY cc.concept_id HAVING {having_clause}"
+                    ") "
+                    "ORDER BY l.lemme, c.sens_num LIMIT ?",
+                    comp_params,
+                )
+                for row in cur2.fetchall():
+                    d = dict(row)
+                    if d["id"] not in seen_ids:
+                        results.append(d)
+                        seen_ids.add(d["id"])
+            except Exception:
+                pass
+
+        return results
+
+    def _rechercher_entites_v5(
+        self, conn: sqlite3.Connection, words: list[str], limite: int,
+    ) -> list[dict[str, Any]]:
+        """Recherche d'entites dans le schema v5."""
+        if self._has_fts:
+            return self._rechercher_entites_v5_fts(conn, words, limite)
+        return self._rechercher_entites_v5_like(conn, words, limite)
+
+    def _rechercher_entites_v5_fts(
+        self, conn: sqlite3.Connection, words: list[str], limite: int,
+    ) -> list[dict[str, Any]]:
+        """Recherche d'entites v5 via FTS5."""
+        # FTS5 : tous les mots sont implicitement ANDes
+        fts_query = " ".join(self._fts5_escape(w) for w in words)
+        cur = conn.execute(
+            "SELECT DISTINCT e.* "
+            "FROM entites e "
+            "WHERE e.id IN ("
+            "  SELECT rowid FROM fts_entites WHERE fts_entites MATCH ?"
+            ") "
+            "ORDER BY e.label LIMIT ?",
+            (fts_query, limite),
+        )
+        results = [dict(row) for row in cur.fetchall()]
+
+        # Completer via entite_lemmes + fts_lemmes
+        if len(results) < limite:
+            seen_ids = {r["id"] for r in results}
+            remaining = limite - len(results)
+            fts_lemme_query = " ".join(self._fts5_escape(w) for w in words)
+            try:
+                cur2 = conn.execute(
+                    "SELECT DISTINCT e.* "
+                    "FROM entites e "
+                    "WHERE e.id IN ("
+                    "  SELECT el.entite_id FROM entite_lemmes el "
+                    "  WHERE el.lemme_id IN ("
+                    "    SELECT rowid FROM fts_lemmes WHERE fts_lemmes MATCH ?"
+                    "  )"
+                    ") "
+                    "ORDER BY e.label LIMIT ?",
+                    (fts_lemme_query, remaining),
+                )
+                for row in cur2.fetchall():
+                    d = dict(row)
+                    if d["id"] not in seen_ids:
+                        results.append(d)
+                        seen_ids.add(d["id"])
+            except Exception:
+                pass
+
+        return results
+
+    def _rechercher_entites_v5_like(
+        self, conn: sqlite3.Connection, words: list[str], limite: int,
+    ) -> list[dict[str, Any]]:
+        """Recherche d'entites v5 via LIKE (fallback)."""
+        # Recherche dans label et description
+        conditions = []
+        params: list[str] = []
+        for word in words:
+            like_pat = f"%{word}%"
+            conditions.append("(e.label LIKE ? OR e.description LIKE ?)")
+            params.extend([like_pat, like_pat])
+
+        where = " AND ".join(conditions)
+        params.append(str(limite))
+        cur = conn.execute(
+            "SELECT DISTINCT e.* "
+            "FROM entites e "
+            f"WHERE {where} "
+            "ORDER BY e.label LIMIT ?",
+            params,
+        )
+        results = [dict(row) for row in cur.fetchall()]
+
+        # Completer via entite_lemmes
+        if len(results) < limite:
+            seen_ids = {r["id"] for r in results}
+            remaining = limite - len(results)
+            having_parts = []
+            comp_params: list[str] = []
+            or_parts = []
+            for word in words:
+                like_pat = f"%{word}%"
+                or_parts.append("l.lemme LIKE ?")
+                comp_params.append(like_pat)
+                having_parts.append(
+                    f"COUNT(DISTINCT CASE WHEN l.lemme LIKE ? THEN 1 END) > 0"
+                )
+                comp_params.append(like_pat)
+
+            or_clause = " OR ".join(or_parts)
+            having_clause = " AND ".join(having_parts)
+            comp_params.append(str(remaining))
+
+            try:
+                cur2 = conn.execute(
+                    "SELECT DISTINCT e.* "
+                    "FROM entites e "
+                    "WHERE e.id IN ("
+                    "  SELECT el.entite_id FROM entite_lemmes el "
+                    "  JOIN lemmes l ON el.lemme_id = l.id "
+                    f"  WHERE {or_clause} "
+                    f"  GROUP BY el.entite_id HAVING {having_clause}"
+                    ") "
+                    "ORDER BY e.label LIMIT ?",
+                    comp_params,
+                )
+                for row in cur2.fetchall():
+                    d = dict(row)
+                    if d["id"] not in seen_ids:
+                        results.append(d)
+                        seen_ids.add(d["id"])
+            except Exception:
+                pass
+
+        return results
+
+    def rechercher_concepts(
+        self, pattern: str, limite: int = 50,
+    ) -> list[Concept]:
+        """Alias de rechercher_entites() pour retrocompatibilite v4."""
+        return self.rechercher_entites(pattern, limite)  # type: ignore[return-value]
+
+    def proprietes_entite(self, entite_id: int) -> dict[str, str]:
+        """Proprietes cle-valeur d'une entite (v5) ou d'un concept (v4).
+
+        Retourne un dict {cle: valeur}.
+        """
+        if self._backend != "sqlite" or self._schema_version < 4:
+            return {}
+        conn = self._get_conn()
+        table = "entite_proprietes" if self._schema_version >= 5 else "concept_proprietes"
+        id_col = "entite_id" if self._schema_version >= 5 else "concept_id"
+        try:
+            cur = conn.execute(
+                f"SELECT cle, valeur FROM {table} WHERE {id_col} = ?",
+                (entite_id,),
+            )
+            return {row[0]: row[1] for row in cur.fetchall()}
+        except sqlite3.OperationalError:
+            return {}
+
+    def proprietes_concept(self, concept_id: int) -> dict[str, str]:
+        """Alias de proprietes_entite() pour retrocompatibilite v4."""
+        return self.proprietes_entite(concept_id)
+
+    def entite_detail(self, entite_id: int) -> dict[str, Any] | None:
+        """Fiche complete d'une entite avec toutes ses relations.
+
+        En v5, lit ``entites`` + ``entite_lemmes`` + ``entite_proprietes``, etc.
+        En v4, lit ``concepts`` + ``concept_composants`` + ``concept_proprietes``.
+
+        Retourne l'entite enrichie avec :
+        - _categories, _proprietes, _composants (lemmes lies)
+        - _exemples (si existants)
+        """
+        if self._backend != "sqlite" or self._schema_version < 4:
+            return None
+        conn = self._get_conn()
+
+        if self._schema_version >= 5:
+            cur = conn.execute(
+                "SELECT e.* FROM entites e WHERE e.id = ?",
+                (entite_id,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            result: dict[str, Any] = dict(row)
+
+            # Proprietes cle-valeur
+            result["_proprietes"] = self.proprietes_entite(entite_id)
+
+            # Categories
+            result["_categories"] = self.categories_de(entite_id)
+
+            # Lemmes lies (composants + homonymes)
+            cur2 = conn.execute(
+                "SELECT el.type, el.pertinence, el.position, "
+                "l.id AS comp_lemme_id, l.lemme AS comp_lemme, l.cgram AS comp_cgram "
+                "FROM entite_lemmes el "
+                "JOIN lemmes l ON el.lemme_id = l.id "
+                "WHERE el.entite_id = ? "
+                "ORDER BY el.type, el.pertinence, el.position",
+                (entite_id,),
+            )
+            result["_composants"] = [dict(r) for r in cur2.fetchall()]
+
+            # Exemples (table supprimee en v6, guard pour compatibilite)
+            if self._has_table("entite_exemples"):
+                cur3 = conn.execute(
+                    "SELECT texte FROM entite_exemples WHERE entite_id = ?",
+                    (entite_id,),
+                )
+                result["_exemples"] = [r[0] for r in cur3.fetchall() if r[0]]
+            else:
+                result["_exemples"] = []
+
+            return result
+
+        # v4
+        cur = conn.execute(
+            "SELECT c.*, l.lemme AS _lemme, l.cgram AS _cgram "
+            "FROM concepts c "
+            "LEFT JOIN lemmes l ON c.lemme_id = l.id "
+            "WHERE c.id = ?",
+            (entite_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+
+        result["_synonymes"] = self.synonymes_de(entite_id)
+        result["_antonymes"] = self.antonymes_de(entite_id)
+        result["_exemples"] = self.exemples_de(entite_id)
+        result["_categories"] = self.categories_de(entite_id)
+        result["_proprietes"] = self.proprietes_concept(entite_id)
+
+        cur2 = conn.execute(
+            "SELECT cc.position, cc.priorite, cc.role, "
+            "l.id AS comp_lemme_id, l.lemme AS comp_lemme, l.cgram AS comp_cgram "
+            "FROM concept_composants cc "
+            "JOIN lemmes l ON cc.lemme_id = l.id "
+            "WHERE cc.concept_id = ? "
+            "ORDER BY cc.priorite, cc.position",
+            (entite_id,),
+        )
+        result["_composants"] = [dict(r) for r in cur2.fetchall()]
+
+        return result
+
+    def entite_par_qid(self, qid: str) -> dict[str, Any] | None:
+        """Retourne le detail d'une entite par son QID Wikidata (v5+)."""
+        if self._backend != "sqlite" or self._schema_version < 5:
+            return None
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT id FROM entites WHERE qid = ?", (qid,)
+        ).fetchone()
+        if row is None:
+            return None
+        return self.entite_detail(row[0])
+
+    def concept_detail(self, concept_id: int) -> Concept | None:
+        """Alias de entite_detail() pour retrocompatibilite v4."""
+        return self.entite_detail(concept_id)  # type: ignore[return-value]
+
+    # --- Methodes v5 : sens, entites, lemmes apparentes ---
+
+    def _definitions_v5(self, mot: str, cgram: str | None = None) -> list[dict[str, Any]]:
+        """definitions() pour schema v5 : lit la table sens + lemme_synonymes."""
+        conn = self._get_conn()
+        sens = self.sens_de(mot, cgram)
+        results: list[dict[str, Any]] = []
+
+        # Recuperer le lemme_id une fois pour synonymes/antonymes
+        lemme_id = sens[0]["lemme_id"] if sens else None
+        if lemme_id is not None:
+            syn_lemmes = self.synonymes_de(lemme_id)
+            ant_lemmes = self.antonymes_de(lemme_id)
+            syn_words = [s["_lemme"] for s in syn_lemmes if s.get("_lemme")]
+            ant_words = [a["_lemme"] for a in ant_lemmes if a.get("_lemme")]
+        else:
+            syn_words = []
+            ant_words = []
+
+        for s in sens:
+            d: dict[str, Any] = dict(s)
+            d["lemme"] = mot
+            d["label"] = mot
+            d["domaine"] = s.get("theme") or ""
+            sid = s.get("id")
+            d["exemples"] = self.exemples_de(sid) if sid else []
+            # Synonymes/antonymes partages au niveau lemme
+            d["synonymes"] = syn_words
+            d["antonymes"] = ant_words
+            d["categories"] = []  # categories au niveau entite en v5
+            d["tags"] = []
+            results.append(d)
+        return results
+
+    def lemmes_apparentes(self, lemme: str, limite: int = 50) -> list[dict[str, Any]]:
+        """Trouve les lemmes multi-mots contenant le lemme donne.
+
+        Ex: lemmes_apparentes("pomme") → ["pomme de terre", "pomme d'adam"]
+
+        Fonctionne en v4 et v5.
+        """
+        if self._backend != "sqlite" or self._schema_version < 4:
+            return []
+        conn = self._get_conn()
+        pattern = f"% {lemme} %"
+        pattern_start = f"{lemme} %"
+        pattern_end = f"% {lemme}"
+        cur = conn.execute(
+            "SELECT * FROM lemmes "
+            "WHERE (lemme LIKE ? OR lemme LIKE ? OR lemme LIKE ?) COLLATE NOCASE "
+            "AND lemme != ? COLLATE NOCASE "
+            "ORDER BY freq_composite DESC, lemme "
+            "LIMIT ?",
+            (pattern, pattern_start, pattern_end, lemme, limite),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+    def exemples_entite(self, entite_id: int) -> list[str]:
+        """Retourne les exemples d'une entite (v5 uniquement)."""
+        if self._backend != "sqlite" or self._schema_version < 5:
+            return []
+        if not self._has_table("entite_exemples"):
+            return []
+        conn = self._get_conn()
+        cur = conn.execute(
+            "SELECT texte FROM entite_exemples WHERE entite_id = ?",
+            (entite_id,),
+        )
+        return [row[0] for row in cur.fetchall() if row[0]]
+
+    def decoder_multext(self, tag: str) -> dict[str, str]:
+        """Decode un tag multext en traits lisibles. Delegue a _multext.py."""
+        return _decoder_multext(tag)
+
+    # --- Methodes NP unifiees (v4 : alias vers methodes standard) ---
+
+    def info_nom_propre(self, mot: str) -> list[dict[str, Any]]:
+        """Retourne les entrees noms propres (SQLite uniquement)."""
+        if self._backend != "sqlite":
+            return []
+        conn = self._get_conn()
+
+        if self._schema_version >= 4:
+            # NP unifies : chercher dans formes+lemmes avec cgram="NOM PROPRE"
+            cur = conn.execute(
+                "SELECT f.id, f.ortho, f.multext, f.phone, f.phone_reversed, "
+                "f.nb_syllabes, f.syllabes, f.freq_opensubs, f.source, "
+                "l.id AS lemme_id, l.lemme, l.cgram, l.genre, "
+                "l.etymologie, l.age "
+                "FROM formes f "
+                "JOIN lemmes l ON f.lemme_id = l.id "
+                "WHERE l.cgram = 'NOM PROPRE' AND f.ortho = ? COLLATE NOCASE",
+                (mot,),
+            )
+            return [dict(row) for row in cur.fetchall()]
+
+        try:
+            cur = conn.execute(
+                "SELECT * FROM noms_propres WHERE lemme = ? COLLATE NOCASE",
+                (mot,),
+            )
+            return [dict(row) for row in cur.fetchall()]
+        except sqlite3.OperationalError:
+            return []
+
+    def rechercher_nom_propre(self, pattern: str, limite: int = 50) -> list[dict[str, Any]]:
+        """Recherche regex sur les noms propres."""
+        if self._backend != "sqlite":
+            return []
+        import re as _re
+        try:
+            regex = _re.compile(pattern, _re.IGNORECASE)
+        except _re.error:
+            return []
+        conn = self._get_conn()
+        conn.create_function("REGEXP", 2, lambda p, s: bool(regex.search(s)) if s else False)
+
+        if self._schema_version >= 4:
+            try:
+                cur = conn.execute(
+                    "SELECT f.ortho AS lemme, l.cgram, f.phone, f.freq_opensubs, "
+                    "l.etymologie, l.age "
+                    "FROM formes f "
+                    "JOIN lemmes l ON f.lemme_id = l.id "
+                    "WHERE l.cgram = 'NOM PROPRE' AND f.ortho REGEXP ? LIMIT ?",
+                    (pattern, limite),
+                )
+                return [dict(row) for row in cur.fetchall()]
+            except sqlite3.OperationalError:
+                return []
+
+        try:
+            cur = conn.execute(
+                "SELECT * FROM noms_propres WHERE lemme REGEXP ? LIMIT ?",
+                (pattern, limite),
+            )
+            return [dict(row) for row in cur.fetchall()]
+        except sqlite3.OperationalError:
+            return []
+
+    def existe_nom_propre(self, mot: str) -> bool:
+        """Test d'existence dans les noms propres."""
+        if self._backend != "sqlite":
+            return False
+        conn = self._get_conn()
+
+        if self._schema_version >= 4:
+            cur = conn.execute(
+                "SELECT 1 FROM formes f "
+                "JOIN lemmes l ON f.lemme_id = l.id "
+                "WHERE l.cgram = 'NOM PROPRE' AND f.ortho = ? COLLATE NOCASE LIMIT 1",
+                (mot,),
+            )
+            return cur.fetchone() is not None
+
+        try:
+            cur = conn.execute(
+                "SELECT 1 FROM noms_propres WHERE lemme = ? COLLATE NOCASE LIMIT 1",
+                (mot,),
+            )
+            return cur.fetchone() is not None
+        except sqlite3.OperationalError:
+            return False
+
+    def phone_nom_propre(self, mot: str) -> str | None:
+        """Retourne la phonetique d'un nom propre."""
+        if self._backend != "sqlite":
+            return None
+        conn = self._get_conn()
+
+        if self._schema_version >= 4:
+            cur = conn.execute(
+                "SELECT f.phone FROM formes f "
+                "JOIN lemmes l ON f.lemme_id = l.id "
+                "WHERE l.cgram = 'NOM PROPRE' AND f.ortho = ? COLLATE NOCASE "
+                "AND f.phone IS NOT NULL AND f.phone != '' LIMIT 1",
+                (mot,),
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
+
+        try:
+            cur = conn.execute(
+                "SELECT phone FROM noms_propres "
+                "WHERE lemme = ? COLLATE NOCASE AND phone IS NOT NULL AND phone != '' "
+                "LIMIT 1",
+                (mot,),
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
+        except sqlite3.OperationalError:
+            return None
+
+    def homophones_nom_propre(self, phone: str) -> list[dict[str, Any]]:
+        """Noms propres ayant cette prononciation."""
+        if self._backend != "sqlite":
+            return []
+        conn = self._get_conn()
+
+        if self._schema_version >= 4:
+            cur = conn.execute(
+                "SELECT f.ortho AS lemme, l.cgram, f.phone "
+                "FROM formes f "
+                "JOIN lemmes l ON f.lemme_id = l.id "
+                "WHERE l.cgram = 'NOM PROPRE' AND f.phone = ?",
+                (phone,),
+            )
+            return [dict(row) for row in cur.fetchall()]
+
+        try:
+            cur = conn.execute(
+                "SELECT * FROM noms_propres WHERE phone = ?",
+                (phone,),
+            )
+            return [dict(row) for row in cur.fetchall()]
+        except sqlite3.OperationalError:
+            return []
+
+    def rimes_nom_propre(self, phone_suffix: str, limite: int = 50) -> list[dict[str, Any]]:
+        """Noms propres dont la phonetique se termine par le suffixe donne."""
+        if self._backend != "sqlite":
+            return []
+        conn = self._get_conn()
+
+        if self._schema_version >= 4:
+            cur = conn.execute(
+                "SELECT f.ortho AS lemme, l.cgram, f.phone "
+                "FROM formes f "
+                "JOIN lemmes l ON f.lemme_id = l.id "
+                "WHERE l.cgram = 'NOM PROPRE' "
+                "AND f.phone LIKE ? AND f.phone IS NOT NULL AND f.phone != '' "
+                "LIMIT ?",
+                (f"%{phone_suffix}", limite),
+            )
+            return [dict(row) for row in cur.fetchall()]
+
+        try:
+            cur = conn.execute(
+                "SELECT * FROM noms_propres "
+                "WHERE phone LIKE ? AND phone IS NOT NULL AND phone != '' "
+                "LIMIT ?",
+                (f"%{phone_suffix}", limite),
+            )
+            return [dict(row) for row in cur.fetchall()]
+        except sqlite3.OperationalError:
+            return []
+
+    # --- Context manager & lifecycle ---
+
+    @classmethod
+    def from_directory(cls, directory: str | Path, **kwargs) -> Lexique:
+        """Auto-decouvre un fichier lexique dans le repertoire.
+
+        Cherche dans l'ordre : .db, .sqlite, .sqlite3, .tsv, .csv.
+        """
+        d = Path(directory)
+        for pattern in ("*.db", "*.sqlite", "*.sqlite3", "*.tsv", "*.csv"):
+            matches = sorted(d.glob(pattern))
+            if matches:
+                return cls(matches[0], **kwargs)
+        raise FileNotFoundError(
+            f"Aucun fichier lexique trouve dans {directory}"
+        )
+
+    def close(self) -> None:
+        """Ferme toutes les connexions SQLite (tous les threads)."""
+        with self._conn_lock:
+            for conn in self._all_conns:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            self._all_conns.clear()
+        self._conn = None
+        self._local = threading.local()
+
+    def __enter__(self) -> Lexique:
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        if hasattr(self, "_conn_lock"):  # objet incomplet si __init__ a échoué
+            self.close()
