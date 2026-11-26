@@ -1,0 +1,52 @@
+NOTICE — lectura-nlp-en (module NLP-EN v1 de Lectura) : licences
+=================================================================
+
+Code
+----
+Copyright (C) 2025-2026 Maxime Carrière (Lectura).
+
+Le code de ce paquet est sous GNU Affero General Public License v3.0 ou
+ultérieure (AGPL-3.0-or-later, texte complet dans LICENCE.txt), ou sous
+licence commerciale de Lectura (usage du code hors des obligations de
+l'AGPL ; contact via https://www.lectura.world). Les sous-paquets
+lectura_nlp_en.analyseur (anciennement lectura-transducer-en 0.1.2) et
+lectura_nlp_en.correcteur (anciennement lectura-corrector-en 0.4.0) sont du
+même auteur et sous la même licence.
+
+Tables de règles livrées (lectura_nlp_en/analyseur/data/)
+---------------------------------------------------------
+Les huit tables du dossier analyseur/data/ ne sont pas du code : elles sont
+sous Creative Commons Attribution - Partage dans les mêmes conditions 4.0
+(CC BY-SA 4.0, https://creativecommons.org/licenses/by-sa/4.0/), et non
+sous AGPL. Quiconque les reçoit peut les copier, les modifier et les
+redistribuer, y compris à des fins commerciales, en citant la source et
+sous la même licence ; la licence commerciale du code ne restreint pas ce
+droit.
+
+- abregements.tsv : générée depuis le lexique anglais de Lectura
+  (Wiktionnaire anglais via kaikki.org, CMUdict, wordfreq, UD English-EWT) ;
+- briques_formules.tsv, formules_phone.tsv : générées depuis LeXiK ;
+- correctifs.tsv, formes_fortes.tsv, maths_signes.tsv,
+  mots_lexicalises.txt, mots_lexicalises_phone.txt : écrites par Lectura.
+
+Attributions : lexique anglais de Lectura (Wiktionnaire via kaikki.org,
+CMUdict, wordfreq, UD English-EWT), CC BY-SA 4.0 ; CARRIERE, Maxime (2026).
+LeXiK — lexique phonétique et grammatical du français. Lectura.
+https://lexique.lectura.world (ORTOLANG, 11403/lexik), CC BY-SA 4.0.
+Détail, et notice complète de CMUdict : ATTRIBUTION.md.
+
+Modèles
+-------
+Ce paquet ne contient aucun modèle (analyseur, tête de sélection, modèle de
+mot, lexique embarqué, modèle de langue et tête de graphie du Correcteur) ni
+aucune base lexicale. Les modèles tournent sur le serveur de Lectura (API
+publique) ou sont livrés avec la licence commerciale ; ils ne sont pas
+couverts par la licence du code.
+
+Données envoyées à l'API
+------------------------
+En mode API (mode "api", ou mode "auto" sans modèles locaux), les textes,
+les prononciations et les mots passés aux fonctions sont envoyés au serveur
+de Lectura (https://api.lectura.world). Politique de confidentialité :
+https://www.lectura.world/confidentialite/#api
+En mode "local" ou "degrade", aucun appel réseau n'est fait.

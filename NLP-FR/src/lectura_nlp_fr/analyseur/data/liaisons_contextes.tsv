@@ -1,0 +1,29 @@
+id	gauche	condition_gauche	droite	condition_droite	statut	frequence	exemple	note
+L01	*		*	h aspiré (marque h de phone_var)	interdite		les | héros	
+L02	*		*	forme ∈ {onze, onzième, oui, huit, huitième, un (numéral nom), yaourt, yacht, yoga, whisky, week-end}	interdite		les | onze ; des | oui	liste fermée de mots à initiale vocalique ou glide qui bloquent sans h ; huit lie dans les composés (dix-huit, MultiToken)
+L03	CCONJ	forme = et	*		interdite		et | alors	
+L04	NOUN	Number=Sing	*		interdite		un soldat | anglais	hors composés figés (accent aigu, pied-à-terre : MultiTokens)
+L05	PROPN		*		interdite		Jean | arrive	
+L06	PRON	clitique sujet postposé (-ils, -elles, -on, -nous, -vous, -il, -elle)	*		interdite		ont-ils | eu ; va-t-on | encore	
+L07	ADV	forme ∈ {quand, comment, combien} interrogatifs	VERB,AUX		interdite		quand | est-il venu	figés : comment‿allez-vous ; quand‿est-ce que (/t/)
+L10	DET		NOUN,PROPN,ADJ,PRON,NUM,ADV		obligatoire		les‿enfants, un‿ami, mon‿ancien, ces‿autres, les‿États-Unis, aux‿Antilles	nom propre ajouté le 5 octobre 2026
+L11	NUM		NOUN,ADJ		obligatoire		deux‿ans, trois‿autres, dix‿hommes	
+L12	ADJ	antéposé (suivi du nom qu'il qualifie)	NOUN		obligatoire		petits‿enfants, grand‿homme, bon‿ami	dénasalisation et [d>t] portées par phone_var
+L13	PRON	clitique préverbal (nous, vous, ils, elles, on, les, en, y)	VERB,AUX,PRON	à droite : verbe, ou clitique en / y	obligatoire		ils‿ont, nous‿en‿avons, on‿y va, vous‿êtes	
+L14	VERB,AUX		PRON	clitique postposé (-il, -elle, -on, -ils, -elles, -y, -en)	obligatoire		vient-il, sont-elles, allez-y, prends-en	
+L15	ADP	monosyllabe (en, dans, chez, sans, sous, dès)	*		obligatoire		en‿avion, chez‿elle, dans‿un, sans‿eux	
+L16	ADV	forme ∈ {très, tout, plus, moins, bien}	ADJ,ADV,VERB	à droite : adjectif, adverbe ou participe	facultative	fréquente	très‿utile, tout‿entier, plus‿important, bien‿aimé	
+L29	ADV	forme = très	NOUN		facultative	fréquente	très‿envie, très‿faim (avoir très envie)	ajoutée le 5 octobre 2026 ; les autres adverbes de L16 ne lient pas devant un nom
+L17	SCONJ	forme = quand	*		obligatoire		quand‿il viendra (/t/)	
+L18	PRON	forme ∈ {dont, tout, rien}	*		facultative	fréquente	dont‿il parle, tout‿est dit, rien‿à dire	
+L19	AUX,VERB	lemme = être	*		facultative	fréquente	c'est‿un ami, ils sont‿arrivés, il était‿une fois	
+L20	AUX	lemme = avoir	VERB		facultative	courante	ils ont‿eu, nous avons‿appris	
+L21	ADV	forme ∈ {pas, trop, jamais, assez, fort, point}	*		facultative	courante	pas‿encore, trop‿aimable, jamais‿autant	
+L22	NOUN	Number=Plur	ADJ		facultative	courante	des enfants‿adorables, des soldats‿anglais	
+L23	ADP	polysyllabe (après, depuis, pendant, devant, avant)	*		facultative	courante	après‿avoir, pendant‿un an	
+L24	CCONJ	forme = mais	*		facultative	rare	mais‿enfin	
+L25	ADV	polysyllabe (souvent, toujours, vraiment…)	*		facultative	rare	toujours‿utile, vraiment‿aimable	
+L26	VERB		*		facultative	rare	je vais‿essayer, il prend‿un livre	hors être (L19)
+L27	NOUN	Number=Plur	VERB,AUX		facultative	rare	les enfants‿ont faim	soutenu
+L28	ADJ	postposé	*		facultative	rare	des amis charmants‿et drôles	
+L99	*		*		interdite			défaut : aucune règle ne s'applique

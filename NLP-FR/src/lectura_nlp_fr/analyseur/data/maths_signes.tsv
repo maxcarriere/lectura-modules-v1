@@ -1,0 +1,83 @@
+# signe	nature	lecture — inventaire des signes de maths que la grammaire des formules du Module connaît, avec leur nature
+# (variable, operateur, fonction) ; lecture et prononciation viennent du lexique (Spéciaux : lettre, symbole, abreviation),
+# la colonne lecture ne sert qu'à choisir parmi plusieurs lectures d'un même signe (« ! » : factorielle, pas point d'exclamation).
+Α	variable	alpha
+α	variable	alpha
+Β	variable	bêta
+β	variable	bêta
+Γ	variable	gamma
+γ	variable	gamma
+Δ	variable	delta
+δ	variable	delta
+Ε	variable	epsilon
+ε	variable	epsilon
+Ζ	variable	zêta
+ζ	variable	zêta
+Η	variable	êta
+η	variable	êta
+Θ	variable	thêta
+θ	variable	thêta
+Ι	variable	iota
+ι	variable	iota
+Κ	variable	kappa
+κ	variable	kappa
+Λ	variable	lambda
+λ	variable	lambda
+Μ	variable	mu
+μ	variable	mu
+Ν	variable	nu
+ν	variable	nu
+Ξ	variable	ksi
+ξ	variable	ksi
+Ο	variable	omicron
+ο	variable	omicron
+Π	variable	pi
+π	variable	pi
+Ρ	variable	rhô
+ρ	variable	rhô
+Σ	variable	sigma
+σ	variable	sigma
+ς	variable	sigma
+Τ	variable	tau
+τ	variable	tau
+Υ	variable	upsilon
+υ	variable	upsilon
+Φ	variable	phi
+φ	variable	phi
+Χ	variable	khi
+χ	variable	khi
+Ψ	variable	psi
+ψ	variable	psi
+Ω	variable	oméga
+ω	variable	oméga
++	operateur	plus
+-	operateur	moins
+−	operateur	moins
+±	operateur	plus ou moins
+×	operateur	fois
+*	operateur	fois
+·	operateur	fois
+÷	operateur	divisé par
+/	operateur	sur
+=	operateur	égale
+≠	operateur	différent de
+<	operateur	inférieur à
+>	operateur	supérieur à
+≤	operateur	inférieur ou égal à
+≥	operateur	supérieur ou égal à
+≈	operateur	environ égal à
+²	operateur	au carré
+³	operateur	au cube
+^	operateur	puissance
+_	operateur	indice
+√	operateur	racine carrée de
+!	operateur	factorielle
+(	operateur	parenthèse ouvrante
+)	operateur	parenthèse fermante
+∞	operateur	infini
+sin	fonction	sinus
+cos	fonction	cosinus
+tan	fonction	tangente
+exp	fonction	exponentielle
+ln	fonction	logarithme népérien
+log	fonction	logarithme

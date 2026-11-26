@@ -1,0 +1,12 @@
+# Aucun modèle, aucune base, aucune donnée lourde, aucun réglage local dans le sdist.
+include LICENCE.txt NOTICE ATTRIBUTION.md README.md CHANGELOG.md
+recursive-include docs *.md
+recursive-include tests *.py
+recursive-include src/lectura_nlp_fr/analyseur/data *.tsv *.txt
+global-exclude *.db *.db-journal *.xz *.gz *.tar *.onnx *.bin *.npz *.json *.pyc *.tmp .env
+exclude GEL.md
+prune compat
+prune build
+prune dist
+prune .claude
+prune .pytest_cache

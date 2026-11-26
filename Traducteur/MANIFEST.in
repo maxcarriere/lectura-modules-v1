@@ -1,0 +1,9 @@
+# Aucun modèle, aucune donnée, aucun réglage local dans le sdist.
+include LICENCE.txt NOTICE ATTRIBUTION.md README.md CHANGELOG.md
+recursive-include docs *.md
+recursive-include tests *.py
+global-exclude *.db *.db-journal *.xz *.gz *.tar *.json *.bin *.onnx *.spm *.pyc *.tmp .env
+prune build
+prune dist
+prune .claude
+prune .pytest_cache

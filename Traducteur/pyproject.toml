@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lectura-traducteur"
+version = "1.0.0"
+description = "French <-> English translation (Lectura Traducteur): protected formulas (dates, times, currencies, measures), word alignment and in-context glossary, through the Lectura public API or local models (no model included)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENCE.txt", "NOTICE", "ATTRIBUTION.md"]
+authors = [{name = "Maxime Carrière (Lectura)", email = "admin@lectura.world"}]
+keywords = [
+    "french", "english", "translation", "machine-translation", "traduction", "nlp", "word-alignment",
+    "glossary", "opus-mt", "ctranslate2",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "Natural Language :: French",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Text Processing :: Linguistic",
+    "Typing :: Typed",
+]
+# Les Analyseurs français et anglais (découpage, formules, analyse pour le glossaire) ; rien d'autre en mode API.
+dependencies = ["lectura-nlp-fr>=2.0.0", "lectura-nlp-en>=1.0.0"]
+
+[project.optional-dependencies]
+# Mode local : traduction OPUS-MT par CTranslate2 (modèles fournis à part, sous licence).
+local = ["ctranslate2>=4.0", "sentencepiece>=0.2", "numpy>=1.24"]
+# Aligneur précis (mBERT ONNX int8), pour aligner et gloser en local.
+aligneur = ["onnxruntime>=1.16", "tokenizers>=0.15", "numpy>=1.24"]
+# Tout le mode local, glossaire compris (il demande aussi les Analyseurs en local).
+tout = ["lectura-traducteur[local,aligneur]", "lectura-nlp-fr[onnx]>=2.0.0", "lectura-nlp-en[onnx]>=1.0.0"]
+dev = ["pytest>=7.0"]
+
+[project.urls]
+Homepage = "https://www.lectura.world/developpement/modules/"
+Documentation = "https://www.lectura.world/developpement/modules/"
+Repository = "https://github.com/maxcarriere/lectura-modules-v1"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+lectura_traducteur = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]

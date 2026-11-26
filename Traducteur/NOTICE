@@ -1,0 +1,28 @@
+NOTICE — lectura-traducteur (le Traducteur de Lectura, v1) : licences
+====================================================================
+
+Code
+----
+Copyright (C) 2025-2026 Maxime Carrière (Lectura).
+
+Le code de ce paquet est sous GNU Affero General Public License v3.0 ou
+ultérieure (AGPL-3.0-or-later, texte complet dans LICENCE.txt), ou sous
+licence commerciale de Lectura (usage du code hors des obligations de
+l'AGPL ; contact via https://www.lectura.world).
+
+Modèles et données
+------------------
+Ce paquet ne contient aucun modèle ni aucun fichier de données.
+
+En mode local, il lit des modèles installés à part (remis avec la licence
+commerciale, ou préparés par l'utilisateur à partir des modèles publics
+OPUS-MT). Ces modèles ne sont pas couverts par la licence du code et gardent
+leurs propres licences (Apache 2.0, CC BY 4.0, CC BY-SA) : voir
+ATTRIBUTION.md.
+
+Données envoyées à l'API
+------------------------
+En mode API (mode retenu d'office quand les modèles ne sont pas installés,
+avec un avertissement), les textes et les mots passés aux fonctions sont
+envoyés au serveur de Lectura (https://api.lectura.world). Politique de
+confidentialité : https://www.lectura.world/confidentialite/#api

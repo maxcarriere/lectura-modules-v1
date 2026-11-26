@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lectura-nlp-fr"
+version = "2.0.0"
+description = "French NLP (Lectura NLP-FR v1): text to phonetics and back, grammatical analysis, pedagogical spelling and grammar corrector, lexicon; through the Lectura public API or local models (no model included)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENCE.txt", "NOTICE", "ATTRIBUTION.md"]
+authors = [{name = "Maxime Carrière (Lectura)", email = "admin@lectura.world"}]
+keywords = [
+    "french", "nlp", "g2p", "p2g", "phonetics", "ipa", "pos-tagging", "lemmatization", "liaison",
+    "spelling", "grammar", "corrector", "education", "lexicon",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "Natural Language :: French",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Text Processing :: Linguistic",
+    "Typing :: Typed",
+]
+dependencies = ["lectura-lexicon>=1.0.0,<2"]
+
+[project.optional-dependencies]
+onnx = ["onnxruntime>=1.16", "numpy>=1.24"]
+correcteur = ["onnxruntime>=1.16", "numpy>=1.24", "kenlm"]
+traducteur = ["lectura-traducteur>=1.0.0,<2"]
+dev = ["pytest>=7.0"]
+
+[project.urls]
+Homepage = "https://www.lectura.world/developpement/modules/"
+Documentation = "https://www.lectura.world/developpement/modules/"
+Repository = "https://github.com/maxcarriere/lectura-modules-v1"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+lectura_nlp_fr = ["py.typed"]
+"lectura_nlp_fr.analyseur" = ["data/*.tsv", "data/*.txt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]

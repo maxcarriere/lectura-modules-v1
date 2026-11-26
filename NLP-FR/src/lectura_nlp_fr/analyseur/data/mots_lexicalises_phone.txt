@@ -1,0 +1,15 @@
+# Équivalent phonétique de mots_lexicalises.txt, au format phone_sep sans les points de syllabe.
+s'ɛt-a-diʁ
+kɛlk'œ̃
+kɛlk'yn
+pʁɛsk'il
+ʁɑ̃de-vu
+ɡaʁd-a-vu
+malɡʁe-nu
+səlɥi-si
+sɛl-si
+sø-si
+səlɥi-la
+sɛl-la
+sø-la
+ʒysk-la

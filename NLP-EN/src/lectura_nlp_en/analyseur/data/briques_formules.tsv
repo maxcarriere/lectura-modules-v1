@@ -1,0 +1,514 @@
+# categorie	signe	lecture	lecture_pluriel	genre	phone	origine — généré par outils/construire_briques_formules.py depuis lexik.db, ne pas modifier à la main
+devise	$	dollar	dollars		dɔ.laʁ	lexique
+devise	£	livre	livres		livʁ	lexique
+devise	¥	yen	yens		jɛn	lexique
+devise	€	euro	euros		ø.ʁo	lexique
+element	billion	billion			bi.ljɔ̃	lexique
+element	billions	billions			bi.ljɔ̃	lexique
+element	cents	cents			sɑ̃	lexique
+element	et	et			e	lexique
+element	milliards	milliards			mi.ljaʁ	lexique
+element	millions	millions			mi.ljɔ̃	lexique
+element	moins	moins			mwɛ̃	lexique
+element	une	une			yn	lexique
+element	vingts	vingts			vɛ̃	lexique
+element	virgule	virgule			viʁ.ɡyl	lexique
+fraction	1/2	demi			də.mi	lexique
+fraction	1/3	tiers			tjɛʁ	lexique
+fraction	1/4	quart			kaʁ	lexique
+fraction	2/3	deux tiers			dø.tjɛʁ	lexique
+fraction	3/4	trois quarts			tʁwa.kaʁ	lexique
+lettre	A	a		m	a	lexique
+lettre	B	b		m	be	lexique
+lettre	C	c		m	se	lexique
+lettre	D	d		m	de	lexique
+lettre	E	e		m	ə	lexique
+lettre	F	f		m	ɛf	lexique
+lettre	G	g		m	ʒe	lexique
+lettre	H	h		m	aʃ	lexique
+lettre	I	i		m	i	lexique
+lettre	J	j		m	ʒi	lexique
+lettre	K	k		m	ka	lexique
+lettre	L	l		m	ɛl	lexique
+lettre	M	m		m	ɛm	lexique
+lettre	N	n		m	ɛn	lexique
+lettre	O	o		m	o	lexique
+lettre	P	p		m	pe	lexique
+lettre	Q	q		m	ky	lexique
+lettre	R	r		m	ɛʁ	lexique
+lettre	S	s		m	ɛs	lexique
+lettre	T	t		m	te	lexique
+lettre	U	u		m	y	lexique
+lettre	V	v		m	ve	lexique
+lettre	W	w		m	du.blə.ve	lexique
+lettre	X	x		m	iks	lexique
+lettre	Y	y		m	i.ɡʁɛk	lexique
+lettre	Z	z		m	zɛd	lexique
+lettre	a	a		m	a	lexique
+lettre	b	b		m	be	lexique
+lettre	c	c		m	se	lexique
+lettre	d	d		m	de	lexique
+lettre	e	e		m	ə	lexique
+lettre	f	f		m	ɛf	lexique
+lettre	g	g		m	ʒe	lexique
+lettre	h	h		m	aʃ	lexique
+lettre	i	i		m	i	lexique
+lettre	j	j		m	ʒi	lexique
+lettre	k	k		m	ka	lexique
+lettre	l	l		m	ɛl	lexique
+lettre	m	m		m	ɛm	lexique
+lettre	n	n		m	ɛn	lexique
+lettre	o	o		m	o	lexique
+lettre	p	p		m	pe	lexique
+lettre	q	q		m	ky	lexique
+lettre	r	r		m	ɛʁ	lexique
+lettre	s	s		m	ɛs	lexique
+lettre	t	t		m	te	lexique
+lettre	u	u		m	y	lexique
+lettre	v	v		m	ve	lexique
+lettre	w	w		m	du.blə.ve	lexique
+lettre	x	x		m	iks	lexique
+lettre	y	y		m	i.ɡʁɛk	lexique
+lettre	z	z		m	zɛd	lexique
+lettre	À	A accent grave			a.ak.sɑ̃.ɡʁav	lexique
+lettre	Â	A accent circonflexe			a.ak.sɑ̃.siʁ.kɔ̃.flɛks	lexique
+lettre	Æ	A E liés			a.ə.lje	lexique
+lettre	Ç	C cédille			s.se.dij	lexique
+lettre	È	E accent grave			ə.ak.sɑ̃.ɡʁav	lexique
+lettre	É	E accent aigu			ə.ak.sɑ̃.e.ɡy	lexique
+lettre	Ê	E accent circonflexe			ə.ak.sɑ̃.siʁ.kɔ̃.flɛks	lexique
+lettre	Ë	E tréma			ə.tʁe.ma	lexique
+lettre	Î	I accent circonflexe			i.ak.sɑ̃.siʁ.kɔ̃.flɛks	lexique
+lettre	Ï	I tréma			i.tʁe.ma	lexique
+lettre	Ô	O accent circonflexe			o.ak.sɑ̃.siʁ.kɔ̃.flɛks	lexique
+lettre	Ù	U accent grave			y.ak.sɑ̃.ɡʁav	lexique
+lettre	Û	U accent circonflexe			y.ak.sɑ̃.siʁ.kɔ̃.flɛks	lexique
+lettre	Ü	U tréma			y.tʁe.ma	lexique
+lettre	à	a accent grave			a.ak.sɑ̃.ɡʁav	lexique
+lettre	â	a accent circonflexe			a.ak.sɑ̃.siʁ.kɔ̃.flɛks	lexique
+lettre	æ	a e liés			a.ə.lje	lexique
+lettre	ç	c cédille			se.se.dij	lexique
+lettre	è	e accent grave			ə.ak.sɑ̃.ɡʁav	lexique
+lettre	é	e accent aigu			ə.ak.sɑ̃.e.ɡy	lexique
+lettre	ê	e accent circonflexe			ə.ak.sɑ̃.siʁ.kɔ̃.flɛks	lexique
+lettre	ë	e tréma			ə.tʁe.ma	lexique
+lettre	î	i accent circonflexe			i.ak.sɑ̃.siʁ.kɔ̃.flɛks	lexique
+lettre	ï	i tréma			i.tʁe.ma	lexique
+lettre	ô	o accent circonflexe			o.ak.sɑ̃.siʁ.kɔ̃.flɛks	lexique
+lettre	ù	u accent grave			y.ak.sɑ̃.ɡʁav	lexique
+lettre	û	u accent circonflexe			y.ak.sɑ̃.siʁ.kɔ̃.flɛks	lexique
+lettre	ü	u tréma			y.tʁe.ma	lexique
+lettre	ÿ	y tréma			i.tʁe.ma	lexique
+lettre	Œ	O E liés			o.ə.lje	lexique
+lettre	œ	o e liés			o.ə.lje	lexique
+lettre	Ÿ	Y tréma			i.tʁe.ma	lexique
+lettre	Α	alpha		m	al.fa	lexique
+lettre	Β	bêta		m	bɛ.ta	lexique
+lettre	Γ	gamma		m	ɡa.ma	lexique
+lettre	Δ	delta		m	dɛl.ta	lexique
+lettre	Ε	epsilon		m	ɛp.si.lɔn	lexique
+lettre	Ζ	zêta		m	zɛ.ta	lexique
+lettre	Η	êta		m	ɛ.ta	lexique
+lettre	Θ	thêta		m	tɛ.ta	lexique
+lettre	Ι	iota		m	jɔ.ta	lexique
+lettre	Κ	kappa		m	ka.pa	lexique
+lettre	Λ	lambda		m	lɑ̃b.da	lexique
+lettre	Μ	mu		m	my	lexique
+lettre	Ν	nu		m	ny	lexique
+lettre	Ξ	ksi		m	ksi	lexique
+lettre	Ο	omicron		m	ɔ.mi.kʁɔn	lexique
+lettre	Π	pi		m	pi	lexique
+lettre	Ρ	rhô		m	ʁo	lexique
+lettre	Σ	sigma		m	siɡ.ma	lexique
+lettre	Τ	tau		m	to	lexique
+lettre	Υ	upsilon		m	yp.si.lɔn	lexique
+lettre	Φ	phi		m	fi	lexique
+lettre	Χ	khi		m	ki	lexique
+lettre	Ψ	psi		m	psi	lexique
+lettre	Ω	oméga		m	ɔ.me.ɡa	lexique
+lettre	α	alpha		m	al.fa	lexique
+lettre	β	bêta		m	bɛ.ta	lexique
+lettre	γ	gamma		m	ɡa.ma	lexique
+lettre	δ	delta		m	dɛl.ta	lexique
+lettre	ε	epsilon		m	ɛp.si.lɔn	lexique
+lettre	ζ	zêta		m	zɛ.ta	lexique
+lettre	η	êta		m	ɛ.ta	lexique
+lettre	θ	thêta		m	tɛ.ta	lexique
+lettre	ι	iota		m	jɔ.ta	lexique
+lettre	κ	kappa		m	ka.pa	lexique
+lettre	λ	lambda		m	lɑ̃b.da	lexique
+lettre	μ	mu		m	my	lexique
+lettre	ν	nu		m	ny	lexique
+lettre	ξ	ksi		m	ksi	lexique
+lettre	ο	omicron		m	ɔ.mi.kʁɔn	lexique
+lettre	π	pi		m	pi	lexique
+lettre	ρ	rhô		m	ʁo	lexique
+lettre	ς	sigma		m	siɡ.ma	lexique
+lettre	σ	sigma		m	siɡ.ma	lexique
+lettre	τ	tau		m	to	lexique
+lettre	υ	upsilon		m	yp.si.lɔn	lexique
+lettre	φ	phi		m	fi	lexique
+lettre	χ	khi		m	ki	lexique
+lettre	ψ	psi		m	psi	lexique
+lettre	ω	oméga		m	ɔ.me.ɡa	lexique
+maths:fonction	cos	cosinus			kɔ.si.nys	lexique
+maths:fonction	exp	exponentielle			ɛks.pɔ.nɑ̃.sjɛl	lexique
+maths:fonction	ln	logarithme népérien			lɔ.ɡa.ʁitm.ne.pe.ʁjɛ̃	lexique
+maths:fonction	log	logarithme			lɔ.ɡa.ʁitm	lexique
+maths:fonction	sin	sinus			si.nys	lexique
+maths:fonction	tan	tangente			tɑ̃.ʒɑ̃t	lexique
+maths:operateur	!	factorielle			fak.tɔ.ʁjɛl	lexique
+maths:operateur	(	parenthèse ouvrante			pa.ʁɑ̃.tɛz.u.vʁɑ̃	lexique
+maths:operateur	)	parenthèse fermante			pa.ʁɑ̃.tɛz.fɛʁ.mɑ̃t	lexique
+maths:operateur	*	fois			fwa	lexique
+maths:operateur	+	plus			plys	lexique
+maths:operateur	-	moins			mwɛ̃	lexique
+maths:operateur	/	sur			syʁ	lexique
+maths:operateur	<	inférieur à			ɛ̃.fe.ʁjœʁ.a	lexique
+maths:operateur	=	égale			e.ɡal	lexique
+maths:operateur	>	supérieur à			sy.pe.ʁjœʁ.a	lexique
+maths:operateur	^	puissance			pɥi.sɑ̃s	lexique
+maths:operateur	_	indice			ɛ̃.dis	lexique
+maths:operateur	±	plus ou moins			ply.z‿u.mwɛ̃	lexique
+maths:operateur	²	au carré			o.ka.ʁe	lexique
+maths:operateur	³	au cube			o.kyb	lexique
+maths:operateur	·	fois			fwa	lexique
+maths:operateur	×	fois			fwa	lexique
+maths:operateur	÷	divisé par			di.vi.ze.paʁ	lexique
+maths:operateur	−	moins			mwɛ̃	lexique
+maths:operateur	√	racine carrée de			ʁa.sin.ka.ʁe.də	lexique
+maths:operateur	∞	infini			ɛ̃.fi.ni	lexique
+maths:operateur	≈	environ égal à			ɑ̃.vi.ʁɔ̃.e.ɡal.a	lexique
+maths:operateur	≠	différent de			di.fe.ʁɑ̃.də	lexique
+maths:operateur	≤	inférieur ou égal à			ɛ̃.fe.ʁjœʁ.u.e.ɡal.a	lexique
+maths:operateur	≥	supérieur ou égal à			sy.pe.ʁjœʁ.u.e.ɡal.a	lexique
+maths:variable	Α	alpha			al.fa	lexique
+maths:variable	Β	bêta			bɛ.ta	lexique
+maths:variable	Γ	gamma			ɡa.ma	lexique
+maths:variable	Δ	delta			dɛl.ta	lexique
+maths:variable	Ε	epsilon			ɛp.si.lɔn	lexique
+maths:variable	Ζ	zêta			zɛ.ta	lexique
+maths:variable	Η	êta			ɛ.ta	lexique
+maths:variable	Θ	thêta			tɛ.ta	lexique
+maths:variable	Ι	iota			jɔ.ta	lexique
+maths:variable	Κ	kappa			ka.pa	lexique
+maths:variable	Λ	lambda			lɑ̃b.da	lexique
+maths:variable	Μ	mu			my	lexique
+maths:variable	Ν	nu			ny	lexique
+maths:variable	Ξ	ksi			ksi	lexique
+maths:variable	Ο	omicron			ɔ.mi.kʁɔn	lexique
+maths:variable	Π	pi			pi	lexique
+maths:variable	Ρ	rhô			ʁo	lexique
+maths:variable	Σ	sigma			siɡ.ma	lexique
+maths:variable	Τ	tau			to	lexique
+maths:variable	Υ	upsilon			yp.si.lɔn	lexique
+maths:variable	Φ	phi			fi	lexique
+maths:variable	Χ	khi			ki	lexique
+maths:variable	Ψ	psi			psi	lexique
+maths:variable	Ω	oméga			ɔ.me.ɡa	lexique
+maths:variable	α	alpha			al.fa	lexique
+maths:variable	β	bêta			bɛ.ta	lexique
+maths:variable	γ	gamma			ɡa.ma	lexique
+maths:variable	δ	delta			dɛl.ta	lexique
+maths:variable	ε	epsilon			ɛp.si.lɔn	lexique
+maths:variable	ζ	zêta			zɛ.ta	lexique
+maths:variable	η	êta			ɛ.ta	lexique
+maths:variable	θ	thêta			tɛ.ta	lexique
+maths:variable	ι	iota			jɔ.ta	lexique
+maths:variable	κ	kappa			ka.pa	lexique
+maths:variable	λ	lambda			lɑ̃b.da	lexique
+maths:variable	μ	mu			my	lexique
+maths:variable	ν	nu			ny	lexique
+maths:variable	ξ	ksi			ksi	lexique
+maths:variable	ο	omicron			ɔ.mi.kʁɔn	lexique
+maths:variable	π	pi			pi	lexique
+maths:variable	ρ	rhô			ʁo	lexique
+maths:variable	ς	sigma			siɡ.ma	lexique
+maths:variable	σ	sigma			siɡ.ma	lexique
+maths:variable	τ	tau			to	lexique
+maths:variable	υ	upsilon			yp.si.lɔn	lexique
+maths:variable	φ	phi			fi	lexique
+maths:variable	χ	khi			ki	lexique
+maths:variable	ψ	psi			psi	lexique
+maths:variable	ω	oméga			ɔ.me.ɡa	lexique
+mois	1	janvier		m	ʒɑ̃.vje	lexique
+mois	10	octobre		m	ɔk.tɔbʁ	lexique
+mois	11	novembre		m	nɔ.vɑ̃bʁ	lexique
+mois	12	décembre		m	de.sɑ̃bʁ	lexique
+mois	2	février		m	fe.vʁi.je	lexique
+mois	3	mars		m	maʁs	lexique
+mois	4	avril		m	a.vʁil	lexique
+mois	5	mai		m	mɛ	lexique
+mois	6	juin		m	ʒɥɛ̃	lexique
+mois	7	juillet		m	ʒɥi.jɛ	lexique
+mois	8	août		m	ut	lexique
+mois	9	septembre		m	sɛp.tɑ̃bʁ	lexique
+nombre	0	zéro			ze.ʁo	lexique
+nombre	1	un			œ̃	lexique
+nombre	10	dix			dis	lexique
+nombre	100	cent			sɑ̃	lexique
+nombre	1000	mille			mil	lexique
+nombre	1000000	million			mi.ljɔ̃	lexique
+nombre	1000000000	milliard			mi.ljaʁ	lexique
+nombre	11	onze			ɔ̃z	lexique
+nombre	12	douze			duz	lexique
+nombre	13	treize			tʁɛz	lexique
+nombre	14	quatorze			ka.tɔʁz	lexique
+nombre	15	quinze			kɛ̃z	lexique
+nombre	16	seize			sɛz	lexique
+nombre	17	dix-sept			di.sɛt	lexique
+nombre	18	dix-huit			di.z‿ɥit	lexique
+nombre	19	dix-neuf			diz.nœf	lexique
+nombre	2	deux			dø	lexique
+nombre	20	vingt			vɛ̃	lexique
+nombre	3	trois			tʁwa	lexique
+nombre	30	trente			tʁɑ̃t	lexique
+nombre	4	quatre			katʁ	lexique
+nombre	40	quarante			ka.ʁɑ̃t	lexique
+nombre	5	cinq			sɛ̃k	lexique
+nombre	50	cinquante			sɛ̃.kɑ̃t	lexique
+nombre	6	six			sis	lexique
+nombre	60	soixante			swa.sɑ̃t	lexique
+nombre	7	sept			sɛt	lexique
+nombre	70	soixante-dix			swa.sɑ̃t.dis	lexique
+nombre	8	huit			ɥit	lexique
+nombre	80	quatre-vingts			ka.tʁə.vɛ̃	lexique
+nombre	9	neuf			nœf	lexique
+nombre	90	quatre-vingt-dix			ka.tʁə.vɛ̃.dis	lexique
+ordinal	1e	premier			pʁə.mje	lexique
+ordinal	1er	premier			pʁə.mje	lexique
+ordinal	1ère	première			pʁə.mjɛʁ	lexique
+ordinal	2e	deuxième			dø.zjɛm	lexique
+ordinal	2nd	second			sə.ɡɔ̃	lexique
+ordinal	2nde	seconde			sə.ɡɔ̃d	lexique
+ordinal	2ème	deuxième			dø.zjɛm	lexique
+ordinal	3e	troisième			tʁwa.zjɛm	lexique
+romain	I	un			œ̃	lexique
+romain	II	deux			dø	lexique
+romain	III	trois			tʁwa	lexique
+romain	IIIe	troisième			tʁwa.zjɛm	lexique
+romain	IIe	deuxième			dø.zjɛm	lexique
+romain	IV	quatre			katʁ	lexique
+romain	IVe	quatrième			ka.tʁi.jɛm	lexique
+romain	IX	neuf			nœf	lexique
+romain	IXe	neuvième			nœ.vjɛm	lexique
+romain	Ier	premier			pʁə.mje	lexique
+romain	Ière	première			pʁə.mjɛʁ	lexique
+romain	V	cinq			sɛ̃k	lexique
+romain	VI	six			sis	lexique
+romain	VII	sept			sɛt	lexique
+romain	VIII	huit			ɥit	lexique
+romain	VIIIe	huitième			ɥi.tjɛm	lexique
+romain	VIIe	septième			sɛ.tjɛm	lexique
+romain	VIe	sixième			si.zjɛm	lexique
+romain	Ve	cinquième			sɛ̃.kjɛm	lexique
+romain	X	dix			dis	lexique
+romain	XI	onze			ɔ̃z	lexique
+romain	XII	douze			duz	lexique
+romain	XIII	treize			tʁɛz	lexique
+romain	XIIIe	treizième			tʁɛ.zjɛm	lexique
+romain	XIIe	douzième			du.zjɛm	lexique
+romain	XIV	quatorze			ka.tɔʁz	lexique
+romain	XIVe	quatorzième			ka.tɔʁ.zjɛm	lexique
+romain	XIX	dix-neuf			diz.nœf	lexique
+romain	XIXe	dix-neuvième			diz.nœ.vjɛm	lexique
+romain	XIe	onzième			ɔ̃.zjɛm	lexique
+romain	XV	quinze			kɛ̃z	lexique
+romain	XVI	seize			sɛz	lexique
+romain	XVII	dix-sept			di.sɛt	lexique
+romain	XVIII	dix-huit			di.z‿ɥit	lexique
+romain	XVIIIe	dix-huitième			di.z‿ɥi.tjɛm	lexique
+romain	XVIIe	dix-septième			di.sɛ.tjɛm	lexique
+romain	XVIe	seizième			sɛ.zjɛm	lexique
+romain	XVe	quinzième			kɛ̃.zjɛm	lexique
+romain	XX	vingt			vɛ̃	lexique
+romain	XXI	vingt-et-un			vɛ̃.t‿e.œ̃	lexique
+romain	XXIe	vingt-et-unième			vɛ̃.t‿e.y.njɛm	lexique
+romain	XXe	vingtième			vɛ̃.tjɛm	lexique
+romain	Xe	dixième			di.zjɛm	lexique
+symbole	!	factorielle	factorielle		fak.tɔ.ʁjɛl	lexique
+symbole	!	point d'exclamation			pwɛ̃.d‿ɛks.kla.ma.sjɔ̃	lexique
+symbole	#	dièse	dièses		djɛz	lexique
+symbole	%	pour cent	pour cent		puʁ.sɑ̃	lexique
+symbole	&	et	et		e	lexique
+symbole	(	parenthèse ouvrante	parenthèse ouvrante		pa.ʁɑ̃.tɛz.u.vʁɑ̃	lexique
+symbole	)	parenthèse fermante	parenthèse fermante		pa.ʁɑ̃.tɛz.fɛʁ.mɑ̃t	lexique
+symbole	*	fois	fois		fwa	lexique
+symbole	+	plus	plus		plys	lexique
+symbole	,	virgule			viʁ.ɡyl	lexique
+symbole	-	moins	moins		mwɛ̃	lexique
+symbole	.	point			pwɛ̃	lexique
+symbole	/	sur	sur		syʁ	lexique
+symbole	0	zéro			ze.ʁo	lexique
+symbole	1	un			œ̃	lexique
+symbole	2	deux			dø	lexique
+symbole	3	trois			tʁwa	lexique
+symbole	4	quatre			katʁ	lexique
+symbole	5	cinq			sɛ̃k	lexique
+symbole	6	six			sis	lexique
+symbole	7	sept			sɛt	lexique
+symbole	8	huit			ɥit	lexique
+symbole	9	neuf			nœf	lexique
+symbole	:	deux-points			dø.pwɛ̃	lexique
+symbole	;	point-virgule			pwɛ̃.viʁ.ɡyl	lexique
+symbole	<	inférieur à	inférieur à		ɛ̃.fe.ʁjœʁ.a	lexique
+symbole	=	égale	égale		e.ɡal	lexique
+symbole	>	supérieur à	supérieur à		sy.pe.ʁjœʁ.a	lexique
+symbole	?	point d'interrogation			pwɛ̃.d‿ɛ̃.tɛ.ʁɔ.ɡa.sjɔ̃	lexique
+symbole	@	arobase	arobases		a.ʁɔ.baz	lexique
+symbole	N°	numéro	numéros		ny.me.ʁo	lexique
+symbole	^	puissance	puissance		pɥi.sɑ̃s	lexique
+symbole	_	indice	indice		ɛ̃.dis	lexique
+symbole	n°	numéro	numéros		ny.me.ʁo	lexique
+symbole	§	paragraphe	paragraphes		pa.ʁa.ɡʁaf	lexique
+symbole	©	copyright	copyright		kɔ.pi.ʁajt	lexique
+symbole	«	guillemet ouvrant			ɡij.mɛ.u.vʁɑ̃	lexique
+symbole	°	degré	degrés		də.ɡʁe	lexique
+symbole	±	plus ou moins	plus ou moins		ply.z‿u.mwɛ̃	lexique
+symbole	²	au carré	au carré		o.ka.ʁe	lexique
+symbole	³	au cube	au cube		o.kyb	lexique
+symbole	·	fois	fois		fwa	lexique
+symbole	»	guillemet fermant			ɡij.mɛ.fɛʁ.mɑ̃	lexique
+symbole	×	fois	fois		fwa	lexique
+symbole	÷	divisé par	divisé par		di.vi.ze.paʁ	lexique
+symbole	‘	guillemet simple ouvrant			ɡi.jə.mɛ.sɛ̃pl.u.vʁɑ̃	lexique
+symbole	’	apostrophe typographique			a.pɔs.tʁɔf.ti.pɔ.ɡʁa.fik	lexique
+symbole	“	guillemet anglais ouvrant			ɡi.jə.mɛ.ɑ̃.ɡlɛ.u.vʁɑ̃	lexique
+symbole	”	guillemet anglais fermant			ɡi.jə.mɛ.ɑ̃.ɡlɛ.fɛʁ.mɑ̃	lexique
+symbole	…	points de suspension			pwɛ̃.də.sys.pɑ̃.sjɔ̃	lexique
+symbole	‰	pour mille	pour mille		puʁ.mil	lexique
+symbole	−	moins	moins		mwɛ̃	lexique
+symbole	√	racine carrée de	racine carrée de		ʁa.sin.ka.ʁe.də	lexique
+symbole	∞	infini	infini		ɛ̃.fi.ni	lexique
+symbole	≈	environ égal à	environ égal à		ɑ̃.vi.ʁɔ̃.e.ɡal.a	lexique
+symbole	≠	différent de	différent de		di.fe.ʁɑ̃.də	lexique
+symbole	≤	inférieur ou égal à	inférieur ou égal à		ɛ̃.fe.ʁjœʁ.u.e.ɡal.a	lexique
+symbole	≥	supérieur ou égal à	supérieur ou égal à		sy.pe.ʁjœʁ.u.e.ɡal.a	lexique
+unite	A	ampère	ampères	m	ɑ̃.pɛʁ	lexique
+unite	Ah	ampère-heure	ampère-heure	m	ɑ̃.pɛ.ʁ‿œʁ	lexique
+unite	B	byte	bytes	m	bajt	lexique
+unite	Bq	becquerel	becquerel	m	bɛ.kə.ʁɛl	lexique
+unite	Ci	curie	curie	m	ky.ʁi	lexique
+unite	Da	dalton	dalton	m	dal.tɔ̃	lexique
+unite	GB	gigabyte	gigabytes	m	ʒi.ɡa.bajt	lexique
+unite	GHz	gigahertz	gigahertz	m	ʒi.ɡa.ɛʁts	lexique
+unite	GJ	gigajoule	gigajoule	m	ʒi.ɡa.ʒul	lexique
+unite	GW	gigawatt	gigawatt	m	ʒi.ɡa.wat	lexique
+unite	Gio	gibioctet	gibioctet	m	ʒi.bjɔk.tɛ	lexique
+unite	Go	gigaoctet	gigaoctets	m	ʒi.ɡa.ɔk.tɛ	lexique
+unite	Gy	gray	gray	m	ɡʁɛ	lexique
+unite	Hz	hertz	hertz	m	ɛʁts	lexique
+unite	J	joule	joules	m	ʒul	lexique
+unite	K	kelvin	kelvins	m	kɛl.vin	lexique
+unite	Kio	kibioctet	kibioctet	m	ki.bjɔk.tɛ	lexique
+unite	L	litre	litres	m	litʁ	lexique
+unite	MB	mégabyte	mégabytes	m	me.ɡa.bajt	lexique
+unite	MHz	mégahertz	mégahertz	m	me.ɡa.ɛʁts	lexique
+unite	MJ	mégajoule	mégajoule	m	me.ɡa.ʒul	lexique
+unite	MN	méganewton	méganewton	m	me.ɡa.nju.tɔn	lexique
+unite	MPa	mégapascal	mégapascal	m	me.ɡa.pas.kal	lexique
+unite	MW	mégawatt	mégawatts	m	me.ɡa.wat	lexique
+unite	MWh	mégawattheure	mégawattheure	m	me.ɡa.wa.tœʁ	lexique
+unite	MeV	mégaélectronvolt	mégaélectronvolt	m	me.ɡa.e.lɛk.tʁɔ̃.vɔlt	lexique
+unite	Mio	mébioctet	mébioctet	m	me.bjɔk.tɛ	lexique
+unite	Mo	mégaoctet	mégaoctets	m	me.ɡa.ɔk.tɛ	lexique
+unite	MΩ	mégaohm	mégaohm	m	me.ɡa.om	lexique
+unite	N	newton	newtons	m	nju.tɔn	lexique
+unite	NM	mille marin	mille marin	m	mil.ma.ʁɛ̃	lexique
+unite	Pa	pascal	pascals	m	pas.kal	lexique
+unite	Po	pétaoctet	pétaoctet	m	pe.ta.ɔk.tɛ	lexique
+unite	Sv	sievert	sievert	m	si.vɛʁt	lexique
+unite	TB	térabyte	térabytes	m	te.ʁa.bajt	lexique
+unite	THz	térahertz	térahertz	m	te.ʁa.ɛʁts	lexique
+unite	To	téraoctet	téraoctets	m	te.ʁa.ɔk.tɛ	lexique
+unite	V	volt	volts	m	vɔlt	lexique
+unite	W	watt	watts	m	wat	lexique
+unite	Wb	weber	weber	m	ve.bɛʁ	lexique
+unite	Wh	wattheure	wattheures	m	wa.tœʁ	lexique
+unite	are	are	are	m	aʁ	lexique
+unite	atm	atmosphère	atmosphère	m	at.mɔs.fɛʁ	lexique
+unite	bar	bar	bars	m	baʁ	lexique
+unite	bit	bit	bits	m	bit	lexique
+unite	cL	centilitre	centilitres	m	sɑ̃.ti.litʁ	lexique
+unite	ca	centiare	centiare	m	sɑ̃.tjaʁ	lexique
+unite	cal	calorie	calories	f	ka.lɔ.ʁi	lexique
+unite	cd	candela	candela	m	kɑ̃.de.la	lexique
+unite	cg	centigramme	centigramme	m	sɑ̃.ti.ɡʁam	lexique
+unite	ch	cheval	chevaux	m	ʃə.val	lexique
+unite	cl	centilitre	centilitres	m	sɑ̃.ti.litʁ	lexique
+unite	cm	centimètre	centimètres	m	sɑ̃.ti.mɛtʁ	lexique
+unite	ct	carat métrique	carat métrique	m	ka.ʁa.me.tʁik	lexique
+unite	dB	décibel	décibels	m	de.si.bɛl	lexique
+unite	dL	décilitre	décilitres	m	de.si.litʁ	lexique
+unite	dam	décamètre	décamètre	m	de.ka.mɛtʁ	lexique
+unite	dg	décigramme	décigramme	m	de.si.ɡʁam	lexique
+unite	dl	décilitre	décilitres	m	de.si.litʁ	lexique
+unite	dm	décimètre	décimètres	m	de.si.mɛtʁ	lexique
+unite	dtex	décitex	décitex	m	de.si.tɛks	lexique
+unite	eV	électronvolt	électronvolts	m	e.lɛk.tʁɔ̃.vɔlt	lexique
+unite	g	gramme	grammes	m	ɡʁam	lexique
+unite	gon	grade	grade	m	ɡʁad	lexique
+unite	h	heure	heures	f	œʁ	lexique
+unite	hL	hectolitre	hectolitre	m	ɛk.tɔ.litʁ	lexique
+unite	hPa	hectopascal	hectopascals	m	ɛk.tɔ.pas.kal	lexique
+unite	ha	hectare	hectares	m	ɛk.taʁ	lexique
+unite	hm	hectomètre	hectomètre	m	ɛk.tɔ.mɛtʁ	lexique
+unite	j	jour	jours	m	ʒuʁ	lexique
+unite	kA	kiloampère	kiloampère	m	ki.lo.ɑ̃.pɛʁ	lexique
+unite	kB	kilobyte	kilobytes	m	ki.lɔ.bajt	lexique
+unite	kHz	kilohertz	kilohertz	m	ki.lo.ɛʁts	lexique
+unite	kJ	kilojoule	kilojoules	m	ki.lɔ.ʒul	lexique
+unite	kN	kilonewton	kilonewton	m	ki.lɔ.nju.tɔn	lexique
+unite	kPa	kilopascal	kilopascal	m	ki.lɔ.pas.kal	lexique
+unite	kV	kilovolt	kilovolts	m	ki.lɔ.vɔlt	lexique
+unite	kW	kilowatt	kilowatts	m	ki.lɔ.wat	lexique
+unite	kWh	kilowattheure	kilowattheures	m	ki.lɔ.wa.tœʁ	lexique
+unite	kat	katal	katal	m	ka.tal	lexique
+unite	kcal	kilocalorie	kilocalories	f	ki.lɔ.ka.lɔ.ʁi	lexique
+unite	keV	kiloélectronvolt	kiloélectronvolt	m	ki.lo.e.lɛk.tʁɔ̃.vɔlt	lexique
+unite	kg	kilogramme	kilogrammes	m	ki.lɔ.ɡʁam	lexique
+unite	km	kilomètre	kilomètres	m	ki.lɔ.mɛtʁ	lexique
+unite	kn	nœud	nœud	m	nø	lexique
+unite	ko	kilooctet	kilooctets	m	ki.lo.ɔk.tɛ	lexique
+unite	kΩ	kiloohm	kiloohm	m	ki.lɔ.om	lexique
+unite	l	litre	litres	m	litʁ	lexique
+unite	lm	lumen	lumen	m	ly.mɛn	lexique
+unite	lx	lux	lux	m	lyks	lexique
+unite	m	mètre	mètres	m	mɛtʁ	lexique
+unite	mA	milliampère	milliampères	m	mi.ljɑ̃.pɛʁ	lexique
+unite	mAh	milliampèreheure	milliampèreheures	m	mi.li.ɑ̃.pɛ.ʁœʁ	lexique
+unite	mH	millihenry	millihenry	m	mi.ljɑ̃.ʁi	lexique
+unite	mL	millilitre	millilitres	m	mi.li.litʁ	lexique
+unite	mV	millivolt	millivolt	m	mi.li.vɔlt	lexique
+unite	mW	milliwatt	milliwatt	m	mi.li.wat	lexique
+unite	mbar	millibar	millibar	m	mi.li.baʁ	lexique
+unite	mg	milligramme	milligrammes	m	mi.li.ɡʁam	lexique
+unite	min	minute	minutes	f	mi.nyt	lexique
+unite	ml	millilitre	millilitres	m	mi.li.litʁ	lexique
+unite	mm	millimètre	millimètres	m	mi.li.mɛtʁ	lexique
+unite	mmHg	millimètre de mercure	millimètre de mercure	m	mi.li.mɛtʁ.də.mɛʁ.kyʁ	lexique
+unite	mn	minute	minutes	f	mi.nyt	lexique
+unite	mol	mole	moles	f	mɔl	lexique
+unite	ms	milliseconde	millisecondes	f	mi.li.sə.ɡɔ̃d	lexique
+unite	nF	nanofarad	nanofarad	m	na.nɔ.fa.ʁad	lexique
+unite	ng	nanogramme	nanogramme	m	na.nɔ.ɡʁam	lexique
+unite	nm	nanomètre	nanomètres	m	na.nɔ.mɛtʁ	lexique
+unite	ns	nanoseconde	nanoseconde	m	na.nɔ.zə.ɡɔ̃d	lexique
+unite	o	octet	octets	m	ɔk.tɛ	lexique
+unite	pF	picofarad	picofarad	m	pi.kɔ.fa.ʁad	lexique
+unite	pm	picomètre	picomètre	m	pi.kɔ.mɛtʁ	lexique
+unite	rad	radian	radian	m	ʁa.djɑ̃	lexique
+unite	rem	rem	rem	m	ʁɛm	lexique
+unite	s	seconde	secondes	f	sə.ɡɔ̃d	lexique
+unite	sr	stéradian	stéradian	m	ste.ʁa.djɑ̃	lexique
+unite	t	tonne	tonnes	f	tɔn	lexique
+unite	tex	tex	tex	m	tɛks	lexique
+unite	tr	tour	tour	m	tuʁ	lexique
+unite	°C	degré Celsius	degrés Celsius	m	də.ɡʁe.sɛl.sjys	lexique
+unite	°F	degré Fahrenheit	degrés Fahrenheit	m	də.ɡʁe.fa.ʁə.najt	lexique
+unite	µA	microampère	microampère	m	mi.kʁo.ɑ̃.pɛʁ	lexique
+unite	µF	microfarad	microfarad	m	mi.kʁɔ.fa.ʁad	lexique
+unite	µH	microhenry	microhenry	m	mi.kʁo.ɑ̃.ʁi	lexique
+unite	µg	microgramme	microgrammes	m	mi.kʁɔ.ɡʁam	lexique
+unite	µm	micromètre	micromètres	m	mi.kʁɔ.mɛtʁ	lexique
+unite	µs	microseconde	microseconde	m	mi.kʁɔ.sə.ɡɔ̃d	lexique

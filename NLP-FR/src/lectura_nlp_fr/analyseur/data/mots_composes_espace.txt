@@ -1,0 +1,1245 @@
+# Mots composés à espace (liste fermée de LeXiK) — généré par outils/construire_mots_composes.py
+a capella
+a cappella
+a contrario
+a fortiori
+a giorno
+a minima
+a posteriori
+a priori
+ab absurdo
+ab initio
+ab ovo
+abonné itinérant
+abonnés itinérants
+accent aigu
+accent grave
+accents aigus
+accents graves
+accès direct
+accès directs
+accès hertzien
+accès hertziens
+accès multiple
+accès multiple par répartition en code
+accès multiple par répartition en fréquence
+accès multiple par répartition temporelle
+accès multiples
+accès multiples par répartition en code
+accès multiples par répartition en fréquence
+accès multiples par répartition temporelle
+accès sans fil
+accès sans fil à l'internet
+accès séquentiel
+accès séquentiels
+acid jazz
+acidification des océans
+acidifications des océans
+ad hoc
+ad hominem
+ad infinitum
+ad libitum
+ad limina
+ad litem
+ad litteram
+ad nauseam
+ad nutum
+ad patres
+ad vitam aeternam
+adresse réticulaire
+adresse universelle
+adresses réticulaires
+adresses universelles
+afin d'
+afin de
+afin qu'
+afin que
+agnus dei
+ah bon
+ainsi qu'
+ainsi que
+al dente
+alla turca
+alors qu'
+alors que
+alphabet latin
+alphabets latins
+alter ego
+ange gardien
+anges gardiens
+anni horribiles
+annus horribilis
+après coup
+après qu'
+après que
+après tout
+arme nucléaire
+armes nucléaires
+assurance chômage
+assurance vieillesse
+assurances chômage
+assurances vieillesse
+attendu que
+atténuation du changement climatique
+atténuations du changement climatique
+au beau milieu de
+au bord de
+au bout de
+au cas où
+au contraire
+au cours de
+au côté de
+au delà
+au demeurant
+au final
+au fur et à mesure
+au fur et à mesure que
+au grand dam de
+au gré de
+au jour le jour
+au lieu de
+au long
+au mieux
+au milieu de
+au moins
+au moment de
+au moment où
+au moyen de
+au même titre que
+au nom de
+au plus
+au plus tard
+au plus tôt
+au plus vite
+au point de
+au point que
+au préalable
+au revoir
+au revoirs
+au sein de
+au sortir de
+au sujet de
+au total
+au travers de
+au visé
+au vu de
+au vu et au su de
+au-dessous de
+auprès d'
+auprès de
+aussi bien
+aussitôt qu'
+aussitôt que
+autant que
+autour de
+autre chose
+autrement dit
+aux aguets
+aux dépens de
+aux revoirs
+avant de
+avant qu'
+avant que
+avant que de
+avant tout
+ballon rond
+bande dessinée
+bandes dessinées
+baptême du feu
+baptêmes du feu
+barbe à papa
+barbes à papa
+base de données
+bases de données
+bel canto
+bel et bien
+best of
+bests of
+bien entendu
+bien qu'
+bien que
+bien sûr
+big band
+big bands
+big bang
+bloody mary
+bloody marys
+bon appétit
+bon mot
+bonne année
+bonne journée
+bonne nuit
+bonnes nuits
+bons mots
+borne d'incendie
+bornes d'incendie
+bouche d'incendie
+bouches d'incendie
+bouclier thermique
+boucliers thermiques
+boule de neige
+boules de neige
+bourrage d'urnes
+bourrages d'urnes
+bout à bout
+bouton d'or
+boutons d'or
+boîte à chansons
+boîte à outils
+boîtes à chansons
+boîtes à outils
+brosse à dents
+brosses à dents
+buen retiro
+bulletin de vote
+bulletins de vote
+c'est pourquoi
+cahin caha
+canne à pêche
+cannes à pêche
+cargo spatial
+cargos spatiaux
+carotte de glace
+carottes de glace
+carpe diem
+carte blanche
+cas contact
+cas contacts
+casus belli
+catégorie grammaticale
+catégories grammaticales
+cent mille
+centre de données
+centres de données
+cependant que
+chambre à coucher
+chambres à coucher
+changement climatique
+changements climatiques
+chaque fois que
+char à voile
+chars à voile
+chef d'orchestre
+chefs d'orchestre
+chemin de fer
+chemins de fer
+cheval de trait
+chevaux de trait
+chien de mer
+chiens de mer
+chop suey
+chop sueys
+chou blanc
+choux blancs
+circuit intégré
+circuits intégrés
+clin d'œil
+clins d'yeux
+clins d'œil
+code objet
+code source
+codes objets
+codes source
+codes sources
+coffee shop
+coffee shops
+colonne vertébrale
+colonnes vertébrales
+combustible fossile
+combustibles fossiles
+comic book
+comic books
+comme il faut
+comme s'
+comme si
+comme ça
+commedia dell'arte
+compensation carbone
+compensations carbone
+compte rendu
+comptes rendus
+conseil d'administration
+conseils d'administration
+considérant que
+cornet à pistons
+cornets à pistons
+corps diplomatique
+corps diplomatiques
+corpus delicti
+couche d'ozone
+couches d'ozone
+coup d'état
+coup de glotte
+coup de main
+coup de poing
+coup de pouce
+coups d'état
+coups de glotte
+coups de main
+coups de mains
+coups de poing
+coups de pouce
+courrier électronique
+courriers électroniques
+cours d'eau
+course de pleine nature
+courses de pleine nature
+crise sanitaire
+crises sanitaires
+crème glacée
+crèmes glacées
+cuillère à café
+cuillère à soupe
+cuillères à café
+cuillères à soupe
+cul de basse-fosse
+culs de basse-fosse
+curriculum vitae
+curriculums vitae
+cycle du carbone
+cycles du carbone
+d'autant plus
+d'autant plus que
+d'autant que
+d'autre part
+d'ici là
+d'ici à
+d'ores et déjà
+dans la mesure où
+de auditu
+de ce pas
+de chez
+de facto
+de fait
+de force
+de front
+de guingois
+de jure
+de l'ordre de
+de laquelle
+de loin
+de loin en loin
+de manière à
+de manière à ce que
+de moins en moins
+de moitié
+de même
+de même que
+de nouveau
+de par
+de part et d'autre
+de plano
+de plus
+de plus belle
+de plus en plus
+de prime abord
+de profundis
+de près
+de sorte qu'
+de sorte que
+de suite
+de surcroît
+de temps en temps
+de temps à autre
+de toute façon
+de toutes façons
+de toutes parts
+de travers
+de traviole
+de trop
+de visu
+delirium tremens
+depuis longtemps
+depuis qu'
+depuis que
+des fois que
+deus ex machina
+dioxyde de carbone
+dioxydes de carbone
+distanciation physique
+distanciation sociale
+distanciations physiques
+distanciations sociales
+dites donc
+doigt de pied
+doigts de pied
+domaine de premier niveau
+domaines de premier niveau
+don quichotte
+don quichottisme
+don quichottismes
+donnée ouverte
+données ouvertes
+dons quichottes
+dos à dos
+dream team
+dream teams
+droit d'auteur
+droit de vote
+droits d'auteur
+droits de vote
+du moins
+du moment que
+du tout
+durant qu'
+durant que
+dès lors
+dès lors que
+dès qu'
+dès que
+dès que possible
+délit d'initié
+délits d'initié
+eau de cologne
+eau de parfum
+eau de toilette
+eau gazeuse
+eaux de cologne
+eaux de parfum
+eaux de toilette
+eaux gazeuses
+ecce homo
+effet de serre
+effets de serre
+eh ben
+eh bien
+empreinte carbone
+empreintes carbone
+en amont de
+en arrière
+en arrière de
+en aval de
+en avant
+en avant de
+en bas
+en cas de
+en catimini
+en commun
+en conséquence
+en dedans
+en dehors d'
+en dehors de
+en dessous
+en dessous de
+en dessus
+en deçà
+en diable
+en définitive
+en dépit de
+en effet
+en entier
+en face
+en face de
+en fait
+en fait de
+en faveur de
+en gros
+en guise de
+en général
+en haut
+en haut de
+en loucedé
+en manière de
+en moyenne
+en même temps
+en outre
+en particulier
+en partie
+en plus
+en plus de
+en principe
+en proie à
+en quelque sorte
+en raison de
+en regard de
+en revanche
+en rien
+en rond
+en signe de
+en somme
+en sorte que
+en stand-by
+en sus
+en tant qu'
+en tant que
+en tapinois
+en termes de
+en tout
+en tout cas
+en tout et pour tout
+en train
+en train de
+en tête
+en tête à tête
+en vain
+en vertu de
+en vrac
+en vue
+en vérité
+encore que
+entre autres
+entre temps
+espèce envahissante
+espèces envahissantes
+et caetera
+et cetera
+eu égard à
+ex abrupto
+ex aequo
+ex cathedra
+ex nihilo
+ex professo
+face à
+fausse morille
+fausses morilles
+faute de
+fer à repasser
+fers à repasser
+feu d'artifice
+feu de forêt
+feux d'artifice
+feux d'artifices
+feux de forêt
+fibre optique
+fibres optiques
+file d'attente
+files d'attente
+fils de pute
+fils de putes
+five o'clock
+five o'clocks
+foire aux questions
+foires aux questions
+fourgon d'incendie
+fourgons d'incendie
+free jazz
+frein à main
+freins à main
+fresque vidéo
+fresques vidéo
+fresques vidéos
+fruit de mer
+fruit à coque
+fruits de mer
+fruits à coque
+fuseau horaire
+fuseaux horaires
+fête des mères
+fêtes des mères
+gain de cause
+garde champêtre
+gardes champêtres
+gardien de but
+gardienne de but
+gardiennes de but
+gardiens de but
+gare ferroviaire
+gare maritime
+gares ferroviaires
+gastrectomie longitudinale
+gastrectomies longitudinales
+gaz noble
+gaz nobles
+gaz à effet de serre
+gelée royale
+gelées royales
+gentleman's agreement
+geste barrière
+gestes barrière
+gestes barrières
+goutte à goutte
+grain de beauté
+grains de beauté
+gratis pro deo
+grippe espagnole
+grosso merdo
+grosso modo
+grâce à
+habeas corpus
+happy end
+happy ends
+happy few
+has been
+has beens
+haut de gamme
+hic et nunc
+high tech
+homme de cro-magnon
+hommes de cro-magnon
+homo erectus
+homo habilis
+homo heidelbergensis
+homo neanderthalensis
+homo sapiens
+homo sapiens sapiens
+honoris causa
+hors de
+house music
+huile de palme
+huiles de palme
+hyène tachetée
+hyènes tachetées
+hôtel de ville
+hôtels de ville
+in abstracto
+in anima vili
+in extenso
+in extremis
+in fine
+in pace
+in petto
+in utero
+in vino veritas
+in vitro
+in vivo
+intra muros
+ipso facto
+irish coffee
+irish coffees
+ite missa est
+jauge de contrainte
+jauge de déformation
+jauge extensométrique
+jauges de contrainte
+jauges de déformation
+jauges extensométriques
+jet set
+jet sets
+jeu de cartes
+jeu vidéo
+jeux de cartes
+jeux vidéo
+jeux vidéos
+jour de l'an
+jour de la semaine
+jour férié
+jours de l'an
+jours de la semaine
+jours fériés
+jus de pomme
+jusqu'à ce que
+jusqu'à présent
+kilomètre carré
+kilomètre par heure
+kilomètres carrés
+kilomètres par heure
+kyrie eleison
+la plupart
+la plupart du temps
+lait en poudre
+lait maternel
+laits en poudre
+laits maternels
+langage machine
+langages machine
+langages machines
+langue isolée
+langue isolées
+langue morte
+langues isolées
+langues mortes
+lato sensu
+le long de
+le mieux
+les autres
+lien hypertexte
+liens hypertextes
+lingua franca
+lingua francas
+linguas franca
+linguas francas
+liste électorale
+listes électorales
+livre sterling
+livres sterling
+logiciel libre
+logiciels libres
+loi du talion
+loin de
+lois du talion
+lors de
+lors même que
+machine learning
+machine learnings
+main dans la main
+maintenant que
+mal à propos
+maladie d'alzheimer
+maladie de parkinson
+maladies d'alzheimer
+maladies de parkinson
+malgré que
+malgré tout
+manu militari
+marche nordique
+marches nordiques
+marché aux puces
+marchés aux puces
+mardi gras
+mardis gras
+masculin générique
+masculins génériques
+mass media
+mater dolorosa
+maître queux
+maîtres queux
+mea culpa
+mezza voce
+minima de maunder
+minimum de maunder
+minimums de maunder
+minus habens
+missi dominici
+modern style
+modulation de fréquence
+modulations de fréquence
+modus operandi
+modus vivendi
+mon cul
+mot d'esprit
+mot à mot
+mots d'esprit
+motu proprio
+moyennant que
+mutatis mutandis
+même si
+n'importe où
+n'importe quel
+n'importe quelle
+n'importe quelles
+n'importe quels
+n'importe quoi
+nain de jardin
+nains de jardin
+nature morte
+natures mortes
+ne varietur
+nec plus ultra
+negro spiritual
+negro spirituals
+neutralité carbone
+neutralités carbone
+new wave
+ni plus ni moins
+nihil obstat
+niveau de la mer
+niveaux de la mer
+no man's land
+noix de cajou
+noix de coco
+noix de cocos
+noli me tangere
+nom propre
+nombre complexe
+nombre réel
+nombres complexes
+nombres réels
+noms propres
+non plus
+non sans
+non seulement
+nota bene
+nouvel an
+nulle part
+numerus clausus
+objet volant non identifié
+objets volants non identifiés
+oh là là
+omble de fontaine
+ombles de fontaine
+opéra bouffe
+opéras bouffes
+ordre alphabétique
+ordres alphabétiques
+orge commune
+orges communes
+osso buco
+ou alors
+ou bien
+ou encore
+outre mesure
+page web
+pages web
+pain au chocolat
+pain de mie
+pain grillé
+pains au chocolat
+pains de mie
+pains grillés
+pair à pair
+palmier à huile
+palmiers à huile
+pan bagnat
+par acquit de conscience
+par ailleurs
+par conséquent
+par contre
+par devers
+par exemple
+par hasard
+par moments
+par mégarde
+par rapport à
+par trop
+parc d'attractions
+parc à huîtres
+parce qu'
+parce que
+parcs d'attractions
+parcs à huîtres
+parti pris
+partis pris
+pas encore
+pas mal
+pas à pas
+paso doble
+paso dobles
+passe sanitaire
+passes sanitaires
+pater familias
+pater noster
+pax americana
+pax romana
+peigne à queue
+peignes à queue
+peintre en bâtiment
+peintres en bâtiment
+pelote de laine
+pelotes de laine
+pendant qu'
+pendant que
+per capita
+persona non grata
+personae non gratae
+petit doigt
+petit pain
+petit à petit
+petit âge glaciaire
+petite cuillère
+petites cuillères
+petits doigts
+petits pains
+peu ou prou
+peu à peu
+pince ampèremétrique
+pinces ampèremétriques
+pièce jointe
+pièces jointes
+planche de sillage
+planche à voile
+planches de sillage
+planches à voile
+planète océan
+planètes océan
+planètes océans
+plat de côtes
+plats de côtes
+plein d'
+plein de
+pluie battante
+plus avant
+plus d'un
+plus d'une
+plus ou moins
+plus que
+plus que jamais
+plutôt que
+poil à gratter
+point de vue
+points de suspension
+points de vue
+pomme de terre
+pommes de terre
+portugais du brésil
+post mortem
+poste restante
+postes restantes
+poteau d'incendie
+poteaux d'incendie
+pour autant
+pour autant que
+pour cent
+pour de bon
+pour l'instant
+pour la plupart
+pour le moins
+pour peu que
+pour que
+pour sûr
+pour toujours
+pour un peu
+pour une fois que
+pourquoi pas
+pourvu qu'
+pourvu que
+pretium doloris
+prima donna
+prime donne
+prime time
+prime times
+prise d'eau
+prises d'eau
+pro domo
+proche de
+produit intérieur brut
+produits intérieurs bruts
+protoxyde d'azote
+près de
+public school
+public schools
+puits de carbone
+punching ball
+punching balls
+pêcheur à la mouche
+pêcheurs à la mouche
+pôle nord
+pôle sud
+pôles nord
+pôles sud
+quand bien même
+quand même
+quant aux
+quant à
+quartier général
+quelque chose
+quelque part
+quelque peu
+querelle d'allemand
+querelles d'allemand
+question piège
+questions piège
+questions pièges
+qui que ce soit
+quitte à
+quod erat demonstrandum
+racine carrée
+racines carrées
+raton laveur
+ratons laveurs
+rayon cosmique
+rayon x
+rayons cosmiques
+rayons x
+recherche et développement
+recto tono
+repris de justice
+rhythm and blues
+ric et rac
+rock and roll
+rose trémière
+roses trémières
+réchauffement climatique
+réchauffements climatiques
+rédacteur en chef
+rédacteurs en chef
+rédactrice en chef
+rédactrices en chef
+réseau informatique
+réseau local
+réseaux informatiques
+réseaux locaux
+sainte nitouche
+saintes nitouches
+salle d'eau
+salle de bains
+salle de séjour
+salle à manger
+salles d'eau
+salles de bains
+salles de séjour
+salles à manger
+sans cesse
+sans conteste
+sans coup férir
+sans doute
+sans qu'
+sans que
+santé mentale
+sauf que
+sauf à
+scenic railway
+science de l'information
+science ouverte
+sciences de l'information
+sciences ouvertes
+sedia gestatoria
+selon qu'
+selon que
+sens anti-horaire
+sens horaire
+serviette de bain
+serviette de toilette
+serviettes de bain
+serviettes de toilette
+seul à seul
+si bien que
+si ce n'est
+si jamais
+si nécessaire
+si peu que
+sine die
+sine qua non
+site internet
+site web
+sites internet
+sites web
+sites webs
+sitôt qu'
+sitôt que
+société anonyme
+sociétés anonymes
+soin palliatif
+soins palliatifs
+sorgho commun
+sorghos communs
+soucoupe volante
+soucoupes volantes
+sous l'effet de
+sous le coup de
+sous prétexte que
+sous réserve que
+souventes fois
+stabat mater
+standing ovation
+standing ovations
+star system
+star systems
+statu quo
+statu quos
+stricto sensu
+struggle for life
+struggles for life
+stylo à bille
+stylos à bille
+sui generis
+suite à
+suivant qu'
+suivant que
+surtout que
+tache de rousseur
+tache solaire
+taches de rousseur
+taches solaires
+tandis qu'
+tandis que
+tant et si bien que
+tant pis
+tant que
+tant soit peu
+taxe carbone
+taxes carbone
+tchin tchin
+tel et tel
+tel ou tel
+telle et telle
+telle ou telle
+telles et telles
+telles ou telles
+tels et tels
+tels ou tels
+temps de travail
+tende de tranche
+tendes de tranche
+terminus a quo
+terminus ad quem
+terra incognita
+terra rossa
+terras incognitas
+terras rossas
+terre cuite
+terres cuites
+terza rima
+tiroir à saucisses
+tiroirs à saucisses
+toile d'araignée
+toile d'araignée mondiale
+toiles d'araignée
+too much
+top model
+top models
+tour de force
+tour à tour
+tours de force
+tout au moins
+tout au plus
+tout court
+tout d'abord
+tout d'un coup
+tout de go
+tout de même
+tout de suite
+tout juste
+tout le monde
+tout le temps
+tout plein
+tout à coup
+tout à fait
+tout à l'heure
+tout-terrain de loisir
+trait d'esprit
+trait d'union
+traits d'esprit
+traits d'union
+transition énergétique
+transitions énergétiques
+travail à la tâche
+traveller's chèque
+traveller's chèques
+trou noir
+trous noirs
+trésorier-payeur général
+ultima ratio
+un petit peu
+un peu
+un tel
+une fois
+une fois que
+une telle
+urbi et orbi
+urne électorale
+urnes électorales
+vaisseau sanguin
+vaisseau spatial
+vaisseaux sanguins
+vaisseaux spatiaux
+vapeur d'eau
+vapeurs d'eau
+vent solaire
+ventre à terre
+vents solaire
+vents solaires
+verbi gratia
+veru montanum
+vice versa
+vice-premier ministre
+virus respiratoire
+virus respiratoires
+vis-à-vis de
+voie ferrée
+voies ferrées
+voix off
+volens nolens
+vomito negro
+vox populi
+vulgum pecus
+véhicule spatial
+véhicule utilitaire sport
+véhicules spatiaux
+véhicules utilitaires sports
+y compris
+à bientôt
+à bon marché
+à bord
+à bout portant
+à brûle-pourpoint
+à cause
+à cause de
+à ce point
+à charge de
+à condition qu'
+à condition que
+à contrecœur
+à coup sûr
+à court terme
+à coûts réduits
+à croupetons
+à côté
+à côté de
+à demi
+à demi-voix
+à distance
+à donf
+à droite
+à défaut de
+à fond
+à force de
+à fortiori
+à gauche
+à giorno
+à gogo
+à hauteur de
+à jamais
+à jeun
+à juste titre
+à l'aune de
+à l'aveuglette
+à l'encontre
+à l'envi
+à l'improviste
+à l'instar de
+à l'insu de
+à l'égard de
+à la bonne heure
+à la fois
+à la mode
+à la saint-glinglin
+à laquelle
+à loisir
+à long terme
+à merveille
+à mesure
+à mesure que
+à mi-chemin
+à moins
+à moins de
+à moins que
+à moitié
+à même
+à nouveau
+à nouveaux
+à outrance
+à part
+à part entière
+à partir de
+à peine
+à peu près
+à pic
+à plus
+à posteriori
+à priori
+à proportion de
+à propos
+à propos d'
+à propos de
+à proximité
+à présent
+à présent que
+à qui mieux mieux
+à raison de
+à savoir
+à supposer qu'
+à supposer que
+à tel point que
+à temps
+à terme
+à tire-larigot
+à tort
+à tout jamais
+à tout le moins
+à tout prix
+à tout va
+à tout-va
+à travers
+à tue-tête
+à tâtons
+à vrai dire
+çà et là
+éclat de rire
+éclats de rire
+écologie politique
+écologies politiques
+élément chimique
+éléments chimiques
+énergie nucléaire
+énergie renouvelable
+énergies nucléaires
+énergies renouvelables
+épée de damoclès
+épées de damoclès
+étant donné qu'
+étant donné que
+îlot de chaleur urbain
+îlots de chaleur urbain
+îlots de chaleur urbains
+œuf de pâques
+œufs de pâques
